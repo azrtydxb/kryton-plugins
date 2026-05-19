@@ -638,21 +638,45 @@ function UploadModal({ api, onClose }: { api: ClientPluginAPI; onClose: () => vo
 
 function UploadButton({ api }: { api: ClientPluginAPI }): any {
   const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
 
+  // Icon-only button \u2014 matches the topbar's HeaderBtn density (28px
+  // square, var(--fg-3) idle, var(--fg) on hover, subtle bg on hover).
+  // SVG up-arrow rendered inline at 14px to match the + / history /
+  // theme / settings icons next to it.
   return h('span', null,
     h('button', {
       onClick: () => setOpen(true),
       title: 'Mass upload notes',
+      'aria-label': 'Mass upload notes',
+      onMouseEnter: () => setHover(true),
+      onMouseLeave: () => setHover(false),
       style: {
-        background: 'transparent',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 28,
+        height: 28,
+        background: hover ? 'var(--bg-hover, rgba(255,255,255,0.06))' : 'transparent',
         border: 'none',
         cursor: 'pointer',
-        color: 'inherit',
-        fontSize: 14,
-        padding: '4px 8px',
-        borderRadius: 4,
+        color: hover ? 'var(--fg, currentColor)' : 'var(--fg-3, currentColor)',
+        borderRadius: 5,
+        padding: 0,
+        transition: 'background 120ms, color 120ms',
       },
-    }, '\u2B06 Upload'),
+    },
+      h('svg', {
+        width: 14, height: 14, viewBox: '0 0 24 24',
+        fill: 'none', stroke: 'currentColor', strokeWidth: 2,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': 'true',
+      },
+        h('path', { d: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' }),
+        h('polyline', { points: '17 8 12 3 7 8' }),
+        h('line', { x1: 12, y1: 3, x2: 12, y2: 15 }),
+      ),
+    ),
     open && h(UploadModal, { api, onClose: () => setOpen(false) }),
   );
 }
