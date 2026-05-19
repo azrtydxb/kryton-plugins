@@ -42,7 +42,7 @@ function MindMapRenderer({ content }) {
         if (mmRef.current) {
           try {
             mmRef.current.destroy();
-          } catch (_) {
+          } catch {
           }
           mmRef.current = null;
         }
@@ -70,7 +70,7 @@ function MindMapRenderer({ content }) {
       if (mmRef.current) {
         try {
           mmRef.current.destroy();
-        } catch (_) {
+        } catch {
         }
         mmRef.current = null;
       }

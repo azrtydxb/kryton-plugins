@@ -28,7 +28,7 @@ async function loadMermaid() {
   }
 }
 let renderCounter = 0;
-function MermaidRenderer({ content, notePath }) {
+function MermaidRenderer({ content, notePath: _notePath }) {
   const [svg, setSvg] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);

@@ -39,7 +39,7 @@ async function loadMermaid(): Promise<any> {
 
 let renderCounter = 0;
 
-function MermaidRenderer({ content, notePath }: { content: string; notePath: string }): any {
+function MermaidRenderer({ content, notePath: _notePath }: { content: string; notePath: string }): any {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

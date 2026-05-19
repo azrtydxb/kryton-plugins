@@ -18,30 +18,7 @@ type FilterMode = 'all' | 'unread' | 'read';
 // Reading List panel component
 // ---------------------------------------------------------------------------
 
-function ReadingListPanel(): any {
-  const [items, setItems] = useState<ReadingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [addUrl, setAddUrl] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [filter, setFilter] = useState<FilterMode>('all');
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const resp = await (window as any).__krytonPluginAPI?.api?.fetch('/items') as Response | undefined;
-      // fetchItems is called with the injected api — see below
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // fetchItems placeholder — real fetch is wired via apiRef below
-  return null;
-}
-
-// We need access to `api` inside the component, so we use a factory pattern.
+// Factory pattern: the component needs `api` in closure scope.
 function createReadingListPanel(api: ClientPluginAPI): () => any {
   function ReadingList(): any {
     const [items, setItems] = useState<ReadingItem[]>([]);

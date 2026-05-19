@@ -1,7 +1,7 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
 const { React } = window.__krytonPluginDeps;
-const { createElement: h, useState, useEffect, useRef } = React;
+const { createElement: h, useState, useEffect } = React;
 
 // ---------------------------------------------------------------------------
 // Slash command definitions

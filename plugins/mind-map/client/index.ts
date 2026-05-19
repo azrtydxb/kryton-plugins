@@ -59,7 +59,7 @@ function MindMapRenderer({ content }: { content: string; notePath: string }): an
 
         // Destroy previous instance if any
         if (mmRef.current) {
-          try { mmRef.current.destroy(); } catch (_) {}
+          try { mmRef.current.destroy(); } catch {}
           mmRef.current = null;
         }
 
@@ -91,7 +91,7 @@ function MindMapRenderer({ content }: { content: string; notePath: string }): an
     return () => {
       cancelled = true;
       if (mmRef.current) {
-        try { mmRef.current.destroy(); } catch (_) {}
+        try { mmRef.current.destroy(); } catch {}
         mmRef.current = null;
       }
     };

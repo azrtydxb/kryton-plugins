@@ -1,7 +1,5 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__krytonPluginDeps;
-const { createElement: h, useState, useEffect, useCallback } = React;
 
 // Split markdown content into slides on --- (horizontal rules)
 function splitSlides(content: string): string[] {
