@@ -101,9 +101,16 @@ function loadSortable(): Promise<any> {
 interface BoardProps {
   initial: string;
   onChange: (next: string) => void;
+  /**
+   * When false, the board renders read-only — no Add card / Add column /
+   * delete / drag controls, plain text for card titles, no interactive
+   * checkboxes. Pure-Preview mode passes this as false; Edit/Split keep
+   * it true so authoring still works.
+   */
+  interactive?: boolean;
 }
 
-function KanbanBoard({ initial, onChange }: BoardProps): any {
+function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any {
   const [board, setBoard] = useState<Board>(() => parseBoard(initial));
   const boardRef = useRef<Board>(board);
   boardRef.current = board;
@@ -222,19 +229,28 @@ function KanbanBoard({ initial, onChange }: BoardProps): any {
         },
       },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-          h('input', {
-            value: col.title,
-            onChange: (e: any) => editColumnTitle(ci, e.target.value),
-            style: {
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              color: '#e0e0e0',
-              fontWeight: 600,
-              fontSize: '13px',
-              outline: 'none',
-            },
-          }),
+          interactive
+            ? h('input', {
+                value: col.title,
+                onChange: (e: any) => editColumnTitle(ci, e.target.value),
+                style: {
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#e0e0e0',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  outline: 'none',
+                },
+              })
+            : h('div', {
+                style: {
+                  flex: 1,
+                  color: '#e0e0e0',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                },
+              }, col.title),
           h('span', {
             style: {
               fontSize: '11px',
@@ -244,17 +260,19 @@ function KanbanBoard({ initial, onChange }: BoardProps): any {
               borderRadius: '10px',
             },
           }, String(col.cards.length)),
-          h('button', {
-            onClick: () => deleteColumn(ci),
-            title: 'Delete column',
-            style: {
-              background: 'transparent',
-              border: 'none',
-              color: '#6b7280',
-              cursor: 'pointer',
-              fontSize: '14px',
-            },
-          }, '×')
+          interactive
+            ? h('button', {
+                onClick: () => deleteColumn(ci),
+                title: 'Delete column',
+                style: {
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#6b7280',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                },
+              }, '×')
+            : null,
         ),
         h('div', {
           'data-column-idx': ci,
@@ -269,7 +287,7 @@ function KanbanBoard({ initial, onChange }: BoardProps): any {
                 padding: '6px 8px',
                 borderRadius: '4px',
                 border: '1px solid #3a3a5a',
-                cursor: 'grab',
+                cursor: interactive ? 'grab' : 'default',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
@@ -279,62 +297,79 @@ function KanbanBoard({ initial, onChange }: BoardProps): any {
                 type: 'checkbox',
                 checked: card.done,
                 onChange: () => toggleCardDone(ci, idx),
+                disabled: !interactive,
+                style: interactive ? undefined : { cursor: 'default' },
               }),
-              h('input', {
-                value: card.text,
-                onChange: (e: any) => editCardText(ci, idx, e.target.value),
-                style: {
-                  flex: 1,
-                  background: 'transparent',
-                  border: 'none',
-                  color: card.done ? '#6b7280' : '#e0e0e0',
-                  textDecoration: card.done ? 'line-through' : 'none',
-                  fontSize: '13px',
-                  outline: 'none',
-                },
-              }),
-              h('button', {
-                onClick: () => deleteCard(ci, idx),
-                style: {
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#6b7280',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                },
-              }, '×')
+              interactive
+                ? h('input', {
+                    value: card.text,
+                    onChange: (e: any) => editCardText(ci, idx, e.target.value),
+                    style: {
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      color: card.done ? '#6b7280' : '#e0e0e0',
+                      textDecoration: card.done ? 'line-through' : 'none',
+                      fontSize: '13px',
+                      outline: 'none',
+                    },
+                  })
+                : h('span', {
+                    style: {
+                      flex: 1,
+                      color: card.done ? '#6b7280' : '#e0e0e0',
+                      textDecoration: card.done ? 'line-through' : 'none',
+                      fontSize: '13px',
+                    },
+                  }, card.text),
+              interactive
+                ? h('button', {
+                    onClick: () => deleteCard(ci, idx),
+                    style: {
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#6b7280',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    },
+                  }, '×')
+                : null,
             )
           )
         ),
-        h('button', {
-          onClick: () => addCard(ci),
-          style: {
-            background: '#3a3a5a',
-            color: '#e0e0e0',
-            border: 'none',
-            padding: '6px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '12px',
-          },
-        }, '+ Add card')
+        interactive
+          ? h('button', {
+              onClick: () => addCard(ci),
+              style: {
+                background: '#3a3a5a',
+                color: '#e0e0e0',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px',
+              },
+            }, '+ Add card')
+          : null,
       )
     ),
-    h('button', {
-      key: 'add-col',
-      onClick: addColumn,
-      style: {
-        minWidth: '140px',
-        background: '#252535',
-        color: '#e0e0e0',
-        border: '1px dashed #4f4f6a',
-        padding: '8px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '12px',
-        alignSelf: 'flex-start',
-      },
-    }, '+ Add column')
+    interactive
+      ? h('button', {
+          key: 'add-col',
+          onClick: addColumn,
+          style: {
+            minWidth: '140px',
+            background: '#252535',
+            color: '#e0e0e0',
+            border: '1px dashed #4f4f6a',
+            padding: '8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            alignSelf: 'flex-start',
+          },
+        }, '+ Add column')
+      : null,
   );
 }
 
@@ -347,6 +382,8 @@ interface FenceRendererProps {
   notePath: string;
   range?: { startLine: number; endLine: number };
   source?: string;
+  /** False in pure Preview mode; gate editable controls on this. */
+  interactive?: boolean;
 }
 
 export function activate(api: ClientPluginAPI): void {
@@ -359,7 +396,7 @@ export function activate(api: ClientPluginAPI): void {
   // splice in the new body. Falls back to "first ```kanban fence" if the
   // source has been mutated externally.
   function KanbanFenceRenderer(props: FenceRendererProps): any {
-    const { content, notePath, source } = props;
+    const { content, notePath, source, interactive } = props;
     const onChange = (next: string) => {
       api.notes.get(notePath).then((file: any) => {
         const raw = typeof file === 'string' ? file : (file && file.content) || '';
@@ -373,7 +410,13 @@ export function activate(api: ClientPluginAPI): void {
         api.notify.error('Kanban save failed: ' + (e && e.message ? e.message : String(e)));
       });
     };
-    return h(KanbanBoard, { initial: content, onChange });
+    return h(KanbanBoard, {
+      initial: content,
+      onChange,
+      // Default interactive=false here so the safer read-only path
+      // applies if the host doesn't yet forward the flag.
+      interactive: interactive === true,
+    });
   }
   api.markdown.registerCodeFenceRenderer('kanban', KanbanFenceRenderer);
 }
