@@ -137,27 +137,52 @@ function activate(api) {
         setBusy(false);
       }
     }
+    const header = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "4px 12px",
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: 10.5,
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+          color: "var(--fg-3)"
+        }
+      },
+      h("span", null, "Tag Manager"),
+      h("span", { style: { color: "var(--fg-4)" } }, String(tags.length))
+    );
     if (loading) {
       return h(
         "div",
-        { className: "flex items-center justify-center h-full p-4" },
-        h(
-          "div",
-          { className: "flex items-center gap-2 text-sm text-gray-400" },
-          h("div", { className: "w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" }),
-          "Loading tags..."
-        )
+        { className: "flex flex-col" },
+        header,
+        h("div", {
+          style: {
+            padding: "6px 12px 10px",
+            color: "var(--fg-4)",
+            fontSize: 11.5,
+            fontStyle: "italic"
+          }
+        }, "Loading tags\u2026")
       );
     }
     if (tags.length === 0) {
       return h(
         "div",
-        { className: "flex flex-col h-full" },
-        h(
-          "div",
-          { className: "flex-1 flex items-center justify-center p-4 text-sm text-gray-400 dark:text-gray-500 text-center" },
-          "No tags found. Add #tags to your notes."
-        )
+        { className: "flex flex-col" },
+        header,
+        h("div", {
+          style: {
+            padding: "6px 12px 10px",
+            color: "var(--fg-4)",
+            fontSize: 11.5,
+            fontStyle: "italic"
+          }
+        }, "Add #tags to start managing.")
       );
     }
     function RenameDialog() {
@@ -256,6 +281,7 @@ function activate(api) {
     return h(
       "div",
       { className: "flex flex-col h-full relative" },
+      header,
       // Active operation dialogs (shown at top)
       h(RenameDialog, null),
       h(MergeDialog, null),
