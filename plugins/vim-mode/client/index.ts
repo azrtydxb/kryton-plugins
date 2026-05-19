@@ -1,7 +1,14 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React, vim, getCM } = window.__krytonPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect } = React;
+
+// Placeholder stubs — the vim() CodeMirror extension and getCM helper are
+// no longer injected. A full native vim implementation is scheduled for the
+// vim-mode plugin in Phase 2 (see plans/2026-05-19-plugins-completion-plan.md
+// Task 2.C). Until then the plugin loads but is a no-op.
+const vim = (): any => ({});
+const getCM = (_view: unknown): any => null;
 
 /** Determine the current vim mode string from the editor view. */
 function getVimMode(view: any): string {
@@ -47,8 +54,12 @@ function useModeListener(): string {
 }
 
 export function activate(api: ClientPluginAPI): void {
-  // 1. Register the vim() CodeMirror extension
-  api.editor.registerExtension(vim());
+  // 1. Register a placeholder editor plugin. The real vim implementation
+  // will be wired in Phase 2 against the custom editor's EditorPlugin
+  // interface (onKeyDown cascade + transactions).
+  void vim;
+  void getCM;
+  api.editor.registerPlugin({ name: 'vim-mode' });
 
   // 2. Register vim toggle button in editor toolbar
   function VimToggle(): any {

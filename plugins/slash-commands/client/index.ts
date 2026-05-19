@@ -343,7 +343,12 @@ export function activate(api: ClientPluginAPI): void {
     () => menuState,
   );
 
-  api.editor.registerExtension(slashExtension);
+  // TODO(slash-commands): port to the custom editor's EditorPlugin API.
+  // The previous implementation targeted CodeMirror 6 ViewPlugins, which
+  // are not available in the new editor. Until ported, the slash menu is
+  // a no-op — the buildSlashExtension code path is retained as reference.
+  void slashExtension;
+  api.editor.registerPlugin({ name: 'slash-commands' });
 
   // Mount point for the floating menu
   mountPoint = document.createElement('div');
