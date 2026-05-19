@@ -78,11 +78,40 @@ export interface Transaction {
 
 export type KeyDownResult = Transaction | "prevent-default" | null;
 
+export interface SuggestionTrigger {
+  kind: "wikilink" | "tag" | "slash";
+  /** Offset where the query text starts (after the trigger char/chars). */
+  from: number;
+  /** Offset of the caret at trigger time. */
+  caret: number;
+  /** Raw text typed since the trigger char. */
+  query: string;
+}
+
+export interface Suggestion {
+  id: string;
+  label: string;
+  kind: "note" | "tag" | "command";
+  /**
+   * Text inserted in place of [trigger.from..trigger.caret]. May contain a
+   * literal "$cursor" marker — that marker is stripped and the caret is
+   * placed at its position (e.g. `**$cursor**` lands the caret between the
+   * asterisks).
+   */
+  insert: string;
+  /**
+   * When true, the trigger character(s) themselves are also consumed by the
+   * replacement. Slash defaults to true (so `/h1` becomes `# ` not `/# `);
+   * tag/wikilink default to false (the `#` or `[[` are syntactic markers).
+   */
+  replaceTrigger?: boolean;
+}
+
 export interface EditorPlugin {
   name: string;
   decorations?(state: EditorState): unknown[];
   commands?: Record<string, (state: EditorState) => Transaction>;
-  suggestions?(state: EditorState, trigger: unknown): Promise<unknown[]>;
+  suggestions?(state: EditorState, trigger: SuggestionTrigger): Promise<Suggestion[]>;
   onTransaction?(tr: Transaction, state: EditorState): Transaction | null;
   /**
    * First plugin returning non-null wins. "prevent-default" swallows the

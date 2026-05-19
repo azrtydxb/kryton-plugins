@@ -1,35 +1,9 @@
-// Slash-commands plugin — minimal `suggestions` hook implementation.
+// Slash-commands plugin — `suggestions` hook implementation.
 //
-// History: this plugin previously rendered its own absolutely-positioned
-// React popup and intercepted Arrow/Enter/Esc through `onKeyDown`, because
-// the host editor declared a `suggestions(state, trigger)` hook without a
-// built-in UI consumer.
-//
-// As of Phase 4.1 (Plan: 2026-05-19-plugins-completion-plan.md), the host
-// editor has a built-in suggestion popup that consumes any plugin's
-// `suggestions` hook. Trigger detection (`/`, `[[`, `#`), keyboard nav, and
-// applying the chosen `Suggestion.insert` to `[trigger.from..trigger.caret]`
-// are all owned by the host. This plugin is now just a data source.
-//
-// ── Known gaps surfaced to the host (see plan §5.B) ───────────────────────
-//
-// 1. `$cursor` marker. Several command inserts (bold/italic/code/codeblock/
-//    table) embed a literal `$cursor` marker so the caret lands inside the
-//    inserted markup. The host's `applySuggestion` does NOT process this
-//    marker today — it inserts the literal string and places the caret at
-//    the end. As a workaround we strip the marker so the user at least gets
-//    valid markup; the caret will be at the end of the insertion, not at
-//    `$cursor`. A follow-up host change should honor a `$cursor` (or
-//    structured `caretOffset`) field on `Suggestion`.
-//
-// 2. Leading `/` not replaced. The host's `SuggestionTrigger.from` for
-//    slash points AFTER the `/` character (see suggestionTrigger.ts), so
-//    applying a suggestion replaces only the typed query and leaves the
-//    `/` in the document. With our inserts that prepend block-level syntax
-//    (`# `, `## `, `> `, `- [ ] `, …) the resulting line is e.g. `/# `
-//    rather than `# `. A follow-up host change should make slash triggers
-//    cover the `/` itself, or expose an opt-in flag for plugins that want
-//    block-replacement semantics.
+// The host editor provides trigger detection (`/`, `[[`, `#`), the popup UI,
+// keyboard nav, and `applySuggestion` (which honors `$cursor` markers and
+// consumes the `/` trigger char by default for slash items). This plugin is
+// just a data source.
 
 import type { ClientPluginAPI } from '../../../types/client';
 
@@ -109,15 +83,14 @@ export function activate(api: ClientPluginAPI): void {
       const tg = t as { kind?: string; query?: string } | undefined;
       if (!tg || tg.kind !== 'slash') return [];
       const q = String(tg.query ?? '');
-      // Strip `$cursor` markers — the host popup doesn't honor them yet
-      // (see file-header gap note). Until it does, the marker would land
-      // verbatim in the document, which is worse than losing caret
-      // placement inside the markup.
+      // Host applySuggestion (Phase 4) honors the `$cursor` marker and
+      // consumes the "/" trigger char by default for slash items — no
+      // post-processing needed here.
       return filterCommands(q).map((cmd) => ({
         id: cmd.id,
         label: cmd.label,
-        kind: 'command',
-        insert: resolveInsert(cmd).split('$cursor').join(''),
+        kind: 'command' as const,
+        insert: resolveInsert(cmd),
       }));
     },
   });
