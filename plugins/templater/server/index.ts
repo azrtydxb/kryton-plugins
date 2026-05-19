@@ -1,57 +1,19 @@
 import type { PluginAPI, NoteEntry } from '../../../types/server';
 
-/**
- * Pad a number to 2 digits.
- */
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
+// Declare require for the shared engine — no @types/node in this project
+declare function require(module: string): any;
 
-/**
- * Apply a date format string.
- * Supported tokens: YYYY MM DD HH mm ss
- */
-function applyDateFormat(date: Date, format: string): string {
-  return format
-    .replace('YYYY', String(date.getFullYear()))
-    .replace('MM', pad2(date.getMonth() + 1))
-    .replace('DD', pad2(date.getDate()))
-    .replace('HH', pad2(date.getHours()))
-    .replace('mm', pad2(date.getMinutes()))
-    .replace('ss', pad2(date.getSeconds()));
-}
-
-/**
- * Generate a short random alphanumeric ID.
- */
-function randomId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-/**
- * Process a template string, replacing all known variables.
- */
-function processTemplate(template: string, variables: Record<string, string> = {}): string {
-  const now = new Date();
-
-  // Replace {{date:FORMAT}} first (more specific)
-  let result = template.replace(/\{\{date:([^}]+)\}\}/g, (_match, fmt: string) => {
-    return applyDateFormat(now, fmt.trim());
-  });
-
-  // Replace built-in variables
-  result = result.replace(/\{\{date\}\}/g, applyDateFormat(now, 'YYYY-MM-DD'));
-  result = result.replace(/\{\{time\}\}/g, `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
-  result = result.replace(/\{\{now\}\}/g, now.toISOString());
-  result = result.replace(/\{\{random\}\}/g, randomId());
-
-  // Replace user-supplied variables (e.g. {{title}})
-  result = result.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
-    return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : _match;
-  });
-
-  return result;
-}
+const { processTemplate, extractPrompts } = require('../template-engine.js') as {
+  processTemplate(
+    template: string,
+    ctx?: {
+      now?: Date;
+      vars?: Record<string, string>;
+      prompts?: Record<string, string>;
+    },
+  ): string;
+  extractPrompts(template: string): string[];
+};
 
 /**
  * Recursively collect all file paths from a NoteEntry tree.
@@ -74,9 +36,11 @@ export function activate(api: PluginAPI): void {
   // POST /process — process a template string
   api.routes.register('post', '/process', async (req, res) => {
     try {
-      const { template, variables } = req.body as {
+      const { template, variables, vars, prompts } = req.body as {
         template?: string;
         variables?: Record<string, string>;
+        vars?: Record<string, string>;
+        prompts?: Record<string, string>;
       };
 
       if (typeof template !== 'string') {
@@ -84,11 +48,51 @@ export function activate(api: PluginAPI): void {
         return;
       }
 
-      const processed = processTemplate(template, variables ?? {});
+      const processed = processTemplate(template, {
+        vars: vars ?? variables ?? {},
+        prompts: prompts ?? {},
+      });
       res.json({ content: processed });
     } catch (err: any) {
       api.log.error('Templater /process error', err);
       res.status(500).json({ error: 'Failed to process template' });
+    }
+  });
+
+  // POST /extract-prompts — list {{prompt:NAME}} placeholders in a template
+  api.routes.register('post', '/extract-prompts', async (req, res) => {
+    try {
+      const { template } = req.body as { template?: string };
+      if (typeof template !== 'string') {
+        res.status(400).json({ error: 'template (string) is required' });
+        return;
+      }
+      res.json({ prompts: extractPrompts(template) });
+    } catch (err: any) {
+      api.log.error('Templater /extract-prompts error', err);
+      res.status(500).json({ error: 'Failed to extract prompts' });
+    }
+  });
+
+  // GET /template?path=... — fetch template body by path (template files live in Templates/)
+  api.routes.register('get', '/template', async (req, res) => {
+    try {
+      const userId: string = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const tpath = String((req.query as any)?.path ?? '');
+      if (!tpath) {
+        res.status(400).json({ error: 'path query param required' });
+        return;
+      }
+      const logicalPath = tpath.replace(/\.md$/i, '');
+      const note = await api.notes.get(userId, logicalPath);
+      res.json({ content: note.content });
+    } catch (err: any) {
+      api.log.error('Templater /template error', err);
+      res.status(500).json({ error: err.message ?? 'Failed to read template' });
     }
   });
 

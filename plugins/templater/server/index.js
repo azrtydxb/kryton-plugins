@@ -22,29 +22,7 @@ __export(index_exports, {
   deactivate: () => deactivate
 });
 module.exports = __toCommonJS(index_exports);
-function pad2(n) {
-  return String(n).padStart(2, "0");
-}
-function applyDateFormat(date, format) {
-  return format.replace("YYYY", String(date.getFullYear())).replace("MM", pad2(date.getMonth() + 1)).replace("DD", pad2(date.getDate())).replace("HH", pad2(date.getHours())).replace("mm", pad2(date.getMinutes())).replace("ss", pad2(date.getSeconds()));
-}
-function randomId() {
-  return Math.random().toString(36).slice(2, 10);
-}
-function processTemplate(template, variables = {}) {
-  const now = /* @__PURE__ */ new Date();
-  let result = template.replace(/\{\{date:([^}]+)\}\}/g, (_match, fmt) => {
-    return applyDateFormat(now, fmt.trim());
-  });
-  result = result.replace(/\{\{date\}\}/g, applyDateFormat(now, "YYYY-MM-DD"));
-  result = result.replace(/\{\{time\}\}/g, `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
-  result = result.replace(/\{\{now\}\}/g, now.toISOString());
-  result = result.replace(/\{\{random\}\}/g, randomId());
-  result = result.replace(/\{\{(\w+)\}\}/g, (_match, key) => {
-    return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : _match;
-  });
-  return result;
-}
+const { processTemplate, extractPrompts } = require("../template-engine.js");
 function collectPaths(entries) {
   const paths = [];
   for (const entry of entries) {
@@ -60,16 +38,52 @@ function activate(api) {
   api.log.info("Templater plugin activated");
   api.routes.register("post", "/process", async (req, res) => {
     try {
-      const { template, variables } = req.body;
+      const { template, variables, vars, prompts } = req.body;
       if (typeof template !== "string") {
         res.status(400).json({ error: "template (string) is required" });
         return;
       }
-      const processed = processTemplate(template, variables ?? {});
+      const processed = processTemplate(template, {
+        vars: vars ?? variables ?? {},
+        prompts: prompts ?? {}
+      });
       res.json({ content: processed });
     } catch (err) {
       api.log.error("Templater /process error", err);
       res.status(500).json({ error: "Failed to process template" });
+    }
+  });
+  api.routes.register("post", "/extract-prompts", async (req, res) => {
+    try {
+      const { template } = req.body;
+      if (typeof template !== "string") {
+        res.status(400).json({ error: "template (string) is required" });
+        return;
+      }
+      res.json({ prompts: extractPrompts(template) });
+    } catch (err) {
+      api.log.error("Templater /extract-prompts error", err);
+      res.status(500).json({ error: "Failed to extract prompts" });
+    }
+  });
+  api.routes.register("get", "/template", async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      const tpath = String(req.query?.path ?? "");
+      if (!tpath) {
+        res.status(400).json({ error: "path query param required" });
+        return;
+      }
+      const logicalPath = tpath.replace(/\.md$/i, "");
+      const note = await api.notes.get(userId, logicalPath);
+      res.json({ content: note.content });
+    } catch (err) {
+      api.log.error("Templater /template error", err);
+      res.status(500).json({ error: err.message ?? "Failed to read template" });
     }
   });
   api.routes.register("get", "/templates", async (req, res) => {

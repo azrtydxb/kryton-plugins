@@ -1,11 +1,265 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__krytonPluginDeps;
-const { createElement: h, useState, useEffect, useCallback } = React;
-
 interface Template {
   name: string;
   path: string;
+}
+
+interface PickItem<T> {
+  label: string;
+  value: T;
+  hint?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Modal helpers (inlined — plugin build is non-bundled, sibling imports
+// would require manual js asset publishing).
+// ---------------------------------------------------------------------------
+
+function makeOverlay(): { panel: HTMLDivElement; cleanup: () => void } {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = [
+    'position:fixed', 'inset:0', 'background:rgba(0,0,0,0.45)',
+    'display:flex', 'align-items:center', 'justify-content:center',
+    'z-index:10000', 'font-family:system-ui,-apple-system,sans-serif',
+  ].join(';');
+
+  const panel = document.createElement('div');
+  panel.style.cssText = [
+    'background:#1f2937', 'color:#f3f4f6', 'border-radius:8px',
+    'min-width:320px', 'max-width:480px', 'max-height:70vh',
+    'overflow:hidden', 'display:flex', 'flex-direction:column',
+    'box-shadow:0 10px 40px rgba(0,0,0,0.5)',
+  ].join(';');
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  const cleanup = (): void => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  };
+
+  overlay.addEventListener('click', (e: MouseEvent) => {
+    if (e.target === overlay) cleanup();
+  });
+
+  return { panel, cleanup };
+}
+
+function pickFromList<T>(items: Array<PickItem<T>>, title = 'Select'): Promise<T | null> {
+  return new Promise((resolve) => {
+    if (items.length === 0) { resolve(null); return; }
+
+    const { panel, cleanup } = makeOverlay();
+    let resolved = false;
+    const finish = (v: T | null): void => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(v);
+    };
+
+    const header = document.createElement('div');
+    header.textContent = title;
+    header.style.cssText = 'padding:12px 16px;font-weight:600;border-bottom:1px solid #374151';
+    panel.appendChild(header);
+
+    const list = document.createElement('ul');
+    list.style.cssText = 'list-style:none;margin:0;padding:4px 0;overflow-y:auto;flex:1';
+    panel.appendChild(list);
+
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.style.cssText = [
+        'width:100%', 'text-align:left', 'background:transparent', 'border:none',
+        'color:inherit', 'padding:10px 16px', 'cursor:pointer', 'font:inherit',
+        'display:flex', 'flex-direction:column', 'gap:2px',
+      ].join(';');
+      btn.addEventListener('mouseenter', () => { btn.style.background = '#374151'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
+      btn.addEventListener('click', () => finish(item.value));
+
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      label.style.fontSize = '14px';
+      btn.appendChild(label);
+
+      if (item.hint) {
+        const hint = document.createElement('span');
+        hint.textContent = item.hint;
+        hint.style.cssText = 'font-size:11px;color:#9ca3af';
+        btn.appendChild(hint);
+      }
+
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'padding:8px 16px;border-top:1px solid #374151;text-align:right';
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.style.cssText = 'background:transparent;border:none;color:#9ca3af;cursor:pointer;font:inherit;padding:4px 8px';
+    cancel.addEventListener('click', () => finish(null));
+    footer.appendChild(cancel);
+    panel.appendChild(footer);
+  });
+}
+
+function collectPromptValues(
+  promptNames: string[],
+): Promise<Record<string, string> | null> {
+  return new Promise((resolve) => {
+    if (promptNames.length === 0) { resolve({}); return; }
+
+    const { panel, cleanup } = makeOverlay();
+    let resolved = false;
+    const finish = (v: Record<string, string> | null): void => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(v);
+    };
+
+    const header = document.createElement('div');
+    header.textContent = 'Template variables';
+    header.style.cssText = 'padding:12px 16px;font-weight:600;border-bottom:1px solid #374151';
+    panel.appendChild(header);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'padding:12px 16px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1';
+    panel.appendChild(body);
+
+    const inputs: Record<string, HTMLInputElement> = {};
+    promptNames.forEach((name, i) => {
+      const wrap = document.createElement('label');
+      wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px;color:#9ca3af';
+      wrap.textContent = name;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.style.cssText = [
+        'background:#111827', 'color:#f3f4f6', 'border:1px solid #374151',
+        'border-radius:4px', 'padding:6px 8px', 'font:inherit',
+      ].join(';');
+      wrap.appendChild(input);
+      body.appendChild(wrap);
+      inputs[name] = input;
+      if (i === 0) setTimeout(() => input.focus(), 0);
+    });
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'padding:8px 16px;border-top:1px solid #374151;display:flex;gap:8px;justify-content:flex-end';
+
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.style.cssText = 'background:transparent;border:none;color:#9ca3af;cursor:pointer;font:inherit;padding:6px 10px';
+    cancel.addEventListener('click', () => finish(null));
+    footer.appendChild(cancel);
+
+    const submit = (): void => {
+      const out: Record<string, string> = {};
+      for (const name of promptNames) out[name] = inputs[name]?.value ?? '';
+      finish(out);
+    };
+
+    const ok = document.createElement('button');
+    ok.textContent = 'Apply';
+    ok.style.cssText = [
+      'background:#7c3aed', 'border:none', 'color:white', 'cursor:pointer',
+      'font:inherit', 'padding:6px 12px', 'border-radius:4px',
+    ].join(';');
+    ok.addEventListener('click', submit);
+    footer.appendChild(ok);
+
+    panel.appendChild(footer);
+
+    panel.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// React sidebar panel
+// ---------------------------------------------------------------------------
+
+const { React } = window.__krytonPluginDeps;
+const { createElement: h, useState, useEffect, useCallback } = React;
+
+function basename(p: string): string {
+  const parts = p.split('/');
+  const filename = parts[parts.length - 1] ?? p;
+  return filename.replace(/\.md$/i, '');
+}
+
+async function applyTemplateToNote(
+  api: ClientPluginAPI,
+  template: Template,
+  notePath: string,
+): Promise<void> {
+  // Fetch template body via server route (auth-scoped to current user)
+  const tplResp = await api.api.fetch(`/template?path=${encodeURIComponent(template.path)}`);
+  if (!tplResp.ok) {
+    api.notify.error(`Failed to read template: ${template.name}`);
+    return;
+  }
+  const { content: templateContent } = (await tplResp.json()) as { content: string };
+
+  // Ask server which {{prompt:X}} variables this template needs
+  const promptsResp = await api.api.fetch('/extract-prompts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ template: templateContent }),
+  });
+  const { prompts: promptNames } = promptsResp.ok
+    ? ((await promptsResp.json()) as { prompts: string[] })
+    : { prompts: [] };
+
+  const promptValues = await collectPromptValues(promptNames);
+  if (promptValues === null) return; // user cancelled
+
+  const processResp = await api.api.fetch('/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      template: templateContent,
+      vars: { title: basename(notePath) },
+      prompts: promptValues,
+    }),
+  });
+  if (!processResp.ok) {
+    api.notify.error('Failed to process template');
+    return;
+  }
+  const { content: processed } = (await processResp.json()) as { content: string };
+
+  await api.notes.update(notePath, processed);
+  await api.notes.openByPath(notePath);
+  api.notify.success(`Applied template: ${template.name}`);
+}
+
+async function openTemplatePicker(api: ClientPluginAPI, notePath: string): Promise<void> {
+  const res = await api.api.fetch('/templates');
+  if (!res.ok) {
+    api.notify.error('Failed to fetch templates');
+    return;
+  }
+  const { templates } = (await res.json()) as { templates: Template[] };
+  if (!templates.length) {
+    api.notify.info('No templates found. Create .md files in a Templates/ folder.');
+    return;
+  }
+
+  const choice = await pickFromList(
+    templates.map((t) => ({ label: t.name, value: t, hint: t.path })),
+    'Apply template',
+  );
+  if (!choice) return;
+
+  await applyTemplateToNote(api, choice, notePath);
 }
 
 export function activate(api: ClientPluginAPI): void {
@@ -20,17 +274,15 @@ export function activate(api: ClientPluginAPI): void {
           api.notify.error('Failed to fetch templates');
           return;
         }
-        const data = await resp.json() as { templates: Template[] };
-
+        const data = (await resp.json()) as { templates: Template[] };
         if (data.templates.length === 0) {
           api.notify.info('No templates found. Create .md files in a Templates/ folder.');
           return;
         }
-
-        // List template names in a notification so the user knows what's available.
-        // Full UI selection requires a modal which is beyond v1 scope.
         const names = data.templates.map((t) => t.name).join(', ');
-        api.notify.info(`Available templates: ${names}. Use "Apply Template" note action to insert.`);
+        api.notify.info(
+          `Available templates: ${names}. Use "Apply Template" note action to insert.`,
+        );
       } catch {
         api.notify.error('Failed to fetch templates');
       }
@@ -44,68 +296,11 @@ export function activate(api: ClientPluginAPI): void {
     icon: 'file-text',
     onClick: async (notePath: string) => {
       try {
-        // Fetch available templates
-        const templatesResp = await api.api.fetch('/templates');
-        if (!templatesResp.ok) {
-          api.notify.error('Failed to fetch templates');
-          return;
-        }
-        const { templates } = await templatesResp.json() as { templates: Template[] };
-
-        if (templates.length === 0) {
-          api.notify.info('No templates found. Create .md files in a Templates/ folder.');
-          return;
-        }
-
-        // Use the first available template (v1: simple auto-select)
-        // In a full implementation this would open a picker dialog.
-        const selected = templates[0];
-
-        // Derive note title from path
-        const parts = notePath.split('/');
-        const filename = parts[parts.length - 1] ?? notePath;
-        const title = filename.replace(/\.md$/i, '');
-
-        // Fetch the template file content via notes API
-        const noteResp = await api.api.fetch(`/api/notes/${encodeURIComponent(selected.path)}`);
-        if (!noteResp.ok) {
-          api.notify.error(`Failed to read template: ${selected.name}`);
-          return;
-        }
-        const noteData = await noteResp.json() as { content?: string };
-        const templateContent = noteData.content ?? '';
-
-        // Process the template
-        const processResp = await api.api.fetch('/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            template: templateContent,
-            variables: { title },
-          }),
-        });
-
-        if (!processResp.ok) {
-          api.notify.error('Failed to process template');
-          return;
-        }
-
-        const { content: processed } = await processResp.json() as { content: string };
-
-        // Save processed content back to the target note
-        const saveResp = await api.api.fetch(`/api/notes/${encodeURIComponent(notePath)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: processed }),
-        });
-
-        if (saveResp.ok) {
-          api.notify.success(`Template "${selected.name}" applied to note`);
-        } else {
-          api.notify.error('Failed to save processed template to note');
-        }
-      } catch {
-        api.notify.error('Failed to apply template');
+        await openTemplatePicker(api, notePath);
+      } catch (err) {
+        api.notify.error(
+          `Failed to apply template: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     },
   });
@@ -121,7 +316,7 @@ export function activate(api: ClientPluginAPI): void {
       try {
         const resp = await api.api.fetch('/templates');
         if (resp.ok) {
-          const data = await resp.json() as { templates: Template[] };
+          const data = (await resp.json()) as { templates: Template[] };
           setTemplates(data.templates);
         }
       } catch {
@@ -140,91 +335,97 @@ export function activate(api: ClientPluginAPI): void {
         api.notify.info('Open a note first to apply a template.');
         return;
       }
-
       try {
-        const parts = currentNote.path.split('/');
-        const filename = parts[parts.length - 1] ?? currentNote.path;
-        const title = filename.replace(/\.md$/i, '');
-
-        const processResp = await api.api.fetch('/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            template: currentNote.content,
-            variables: { title },
-          }),
-        });
-
-        if (!processResp.ok) {
-          api.notify.error('Failed to process template');
-          return;
-        }
-
-        const { content: processed } = await processResp.json() as { content: string };
-
-        const saveResp = await api.api.fetch(`/api/notes/${encodeURIComponent(currentNote.path)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: processed }),
-        });
-
-        if (saveResp.ok) {
-          api.notify.success(`Template "${template.name}" applied`);
-        } else {
-          api.notify.error('Failed to save note');
-        }
-      } catch {
-        api.notify.error('Failed to apply template');
+        await applyTemplateToNote(api, template, currentNote.path);
+      } catch (err) {
+        api.notify.error(
+          `Failed to apply template: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 
     if (loading) {
-      return h('div', { className: 'flex items-center justify-center h-full p-4' },
-        h('div', { className: 'flex items-center gap-2 text-sm text-gray-400' },
-          h('div', { className: 'w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin' }),
-          'Loading templates...'
-        )
+      return h(
+        'div',
+        { className: 'flex items-center justify-center h-full p-4' },
+        h(
+          'div',
+          { className: 'flex items-center gap-2 text-sm text-gray-400' },
+          h('div', {
+            className:
+              'w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin',
+          }),
+          'Loading templates...',
+        ),
       );
     }
 
     if (templates.length === 0) {
-      return h('div', { className: 'flex flex-col h-full' },
-        h('div', { className: 'flex-1 flex flex-col items-center justify-center p-4 text-center' },
-          h('p', { className: 'text-sm text-gray-400 dark:text-gray-500' },
-            'No templates found.'
+      return h(
+        'div',
+        { className: 'flex flex-col h-full' },
+        h(
+          'div',
+          { className: 'flex-1 flex flex-col items-center justify-center p-4 text-center' },
+          h(
+            'p',
+            { className: 'text-sm text-gray-400 dark:text-gray-500' },
+            'No templates found.',
           ),
-          h('p', { className: 'text-xs text-gray-400 dark:text-gray-500 mt-1' },
-            'Create .md files in a Templates/ folder.'
-          )
-        )
+          h(
+            'p',
+            { className: 'text-xs text-gray-400 dark:text-gray-500 mt-1' },
+            'Create .md files in a Templates/ folder.',
+          ),
+        ),
       );
     }
 
-    return h('div', { className: 'flex flex-col h-full' },
-      h('ul', { className: 'flex-1 overflow-y-auto py-1' },
+    return h(
+      'div',
+      { className: 'flex flex-col h-full' },
+      h(
+        'ul',
+        { className: 'flex-1 overflow-y-auto py-1' },
         templates.map((template: Template) =>
-          h('li', { key: template.path },
-            h('button', {
-              onClick: () => applyTemplate(template),
-              className: 'w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group',
-              title: `Apply template: ${template.name}`,
-            },
-              h('span', { className: 'block text-sm text-gray-800 dark:text-gray-200 truncate' },
-                template.name
+          h(
+            'li',
+            { key: template.path },
+            h(
+              'button',
+              {
+                onClick: () => applyTemplate(template),
+                className:
+                  'w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group',
+                title: `Apply template: ${template.name}`,
+              },
+              h(
+                'span',
+                { className: 'block text-sm text-gray-800 dark:text-gray-200 truncate' },
+                template.name,
               ),
-              h('span', { className: 'block text-xs text-gray-400 dark:text-gray-500 truncate' },
-                template.path
-              )
-            )
-          )
-        )
+              h(
+                'span',
+                { className: 'block text-xs text-gray-400 dark:text-gray-500 truncate' },
+                template.path,
+              ),
+            ),
+          ),
+        ),
       ),
-      h('div', { className: 'px-3 py-2 border-t border-gray-200 dark:border-gray-700' },
-        h('button', {
-          onClick: fetchTemplates,
-          className: 'text-xs text-gray-400 dark:text-gray-500 hover:text-violet-500 dark:hover:text-violet-400 transition-colors',
-        }, 'Refresh')
-      )
+      h(
+        'div',
+        { className: 'px-3 py-2 border-t border-gray-200 dark:border-gray-700' },
+        h(
+          'button',
+          {
+            onClick: fetchTemplates,
+            className:
+              'text-xs text-gray-400 dark:text-gray-500 hover:text-violet-500 dark:hover:text-violet-400 transition-colors',
+          },
+          'Refresh',
+        ),
+      ),
     );
   }
 
