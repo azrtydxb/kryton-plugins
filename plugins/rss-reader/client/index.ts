@@ -8,6 +8,7 @@ interface Feed {
   url: string;
   title: string;
   addedAt: string;
+  unread?: number;
 }
 
 interface FeedItem {
@@ -74,6 +75,11 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
         api.notify.error('Failed to load feed items');
       } finally {
         setLoadingItems(false);
+      }
+      // Mark as read on open — reset unread badge locally + server-side
+      if ((feed.unread ?? 0) > 0) {
+        setFeeds((prev: any) => prev.map((f: any) => f.id === feed.id ? { ...f, unread: 0 } : f));
+        try { await api.api.fetch(`/feeds/${feed.id}/read`, { method: 'POST' }); } catch { /* ignore */ }
       }
     }
 
@@ -276,8 +282,25 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
                           textAlign: 'left', color: 'var(--color-text, #e0e0e0)',
                           fontSize: '12px', padding: '0 2px',
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          fontWeight: (feed.unread ?? 0) > 0 ? '600' : '400',
                         },
                       }, feed.title),
+                      (feed.unread ?? 0) > 0
+                        ? h('span', {
+                            title: `${feed.unread} unread`,
+                            style: {
+                              minWidth: '18px',
+                              padding: '1px 6px',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              textAlign: 'center',
+                              borderRadius: '9px',
+                              background: '#7c3aed',
+                              color: '#fff',
+                              flexShrink: 0,
+                            },
+                          }, String(feed.unread))
+                        : null,
                       h('button', {
                         onClick: (e: any) => { e.stopPropagation(); handleRemoveFeed(feed); },
                         title: 'Remove feed',

@@ -1,12 +1,26 @@
 import type { PluginAPI } from '../../../types/server';
 import * as https from 'https';
 import * as http from 'http';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { parseFeed } = require('../parser.js') as {
+  parseFeed: (xml: string) => { title: string; items: ParsedItem[] };
+};
+
+interface ParsedItem {
+  guid: string;
+  title: string;
+  link: string;
+  description: string;
+  pubDate: string | null;
+}
 
 interface Feed {
   id: string;
   url: string;
   title: string;
   addedAt: string;
+  seenGuids?: string[];
+  unread?: number;
 }
 
 interface FeedItem {
@@ -14,27 +28,7 @@ interface FeedItem {
   link: string;
   description: string;
   pubDate: string;
-}
-
-// Simple XML tag extractor — pulls the first occurrence of <tag>content</tag>
-function extractTag(xml: string, tag: string): string {
-  const re = new RegExp(`<${tag}[^>]*>(?:<\\!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`, 'i');
-  const m = xml.match(re);
-  return m ? m[1].trim() : '';
-}
-
-// Extract all <item> or <entry> blocks from RSS/Atom XML
-function extractItems(xml: string): string[] {
-  const tag = xml.includes('<entry') ? 'entry' : 'item';
-  const re = new RegExp(`<${tag}[\\s>][\\s\\S]*?<\\/${tag}>`, 'gi');
-  return xml.match(re) ?? [];
-}
-
-function parseFeedTitle(xml: string): string {
-  // Try to get channel title
-  const channelMatch = xml.match(/<channel[\s>][\s\S]*?<\/channel>/i);
-  if (channelMatch) return extractTag(channelMatch[0], 'title') || 'Untitled Feed';
-  return extractTag(xml, 'title') || 'Untitled Feed';
+  guid?: string;
 }
 
 function fetchUrl(url: string): Promise<string> {
@@ -53,7 +47,6 @@ function fetchUrl(url: string): Promise<string> {
     };
 
     const req = lib.get(options as any, (resp: import('http').IncomingMessage) => {
-      // Handle redirects
       if (resp.statusCode && resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
         fetchUrl(resp.headers.location).then(resolve).catch(reject);
         return;
@@ -75,6 +68,7 @@ function fetchUrl(url: string): Promise<string> {
 }
 
 const FEEDS_STORAGE_KEY = 'rss:feeds';
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 export function activate(api: PluginAPI): void {
   api.log.info('RSS Reader plugin activated');
@@ -101,18 +95,17 @@ export function activate(api: PluginAPI): void {
     if (!url) { res.status(400).json({ error: 'Missing url' }); return; }
 
     try {
-      // Fetch the feed to get its title
       let title = url;
       try {
         const xml = await fetchUrl(url);
-        title = parseFeedTitle(xml) || url;
+        const parsed = parseFeed(xml);
+        title = parsed.title || url;
       } catch {
-        // Use URL as title if fetch fails
+        // Use URL as title if fetch/parse fails
       }
 
       const feeds = (await api.storage.get(FEEDS_STORAGE_KEY, userId) as Feed[] | null) ?? [];
 
-      // Prevent duplicates
       if (feeds.some((f) => f.url === url)) {
         res.status(409).json({ error: 'Feed already exists' });
         return;
@@ -123,6 +116,8 @@ export function activate(api: PluginAPI): void {
         url,
         title,
         addedAt: new Date().toISOString(),
+        seenGuids: [],
+        unread: 0,
       };
 
       feeds.push(newFeed);
@@ -150,6 +145,24 @@ export function activate(api: PluginAPI): void {
     }
   });
 
+  // POST /feeds/:id/read — mark feed as read (reset unread counter)
+  api.routes.register('post', '/feeds/:id/read', async (req, res) => {
+    const userId: string = req.user?.id;
+    if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+
+    const id: string = req.params.id;
+    try {
+      const feeds = (await api.storage.get(FEEDS_STORAGE_KEY, userId) as Feed[] | null) ?? [];
+      const idx = feeds.findIndex((f) => f.id === id);
+      if (idx === -1) { res.status(404).json({ error: 'Feed not found' }); return; }
+      feeds[idx].unread = 0;
+      await api.storage.set(FEEDS_STORAGE_KEY, feeds, userId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message ?? 'Failed to mark read' });
+    }
+  });
+
   // GET /feeds/:id/items
   api.routes.register('get', '/feeds/:id/items', async (req, res) => {
     const userId: string = req.user?.id;
@@ -162,18 +175,14 @@ export function activate(api: PluginAPI): void {
       if (!feed) { res.status(404).json({ error: 'Feed not found' }); return; }
 
       const xml = await fetchUrl(feed.url);
-      const rawItems = extractItems(xml);
-      const items: FeedItem[] = rawItems.slice(0, 20).map((block) => {
-        // Prefer <link href="..."> for Atom, else content of <link>
-        const linkHrefMatch = block.match(/<link[^>]+href=["']([^"']+)["']/i);
-        const link = linkHrefMatch ? linkHrefMatch[1] : extractTag(block, 'link');
-        return {
-          title: extractTag(block, 'title') || '(No title)',
-          link,
-          description: extractTag(block, 'description') || extractTag(block, 'summary') || '',
-          pubDate: extractTag(block, 'pubDate') || extractTag(block, 'published') || extractTag(block, 'updated') || '',
-        };
-      });
+      const parsed = parseFeed(xml);
+      const items: FeedItem[] = parsed.items.slice(0, 50).map((it) => ({
+        title: it.title || '(No title)',
+        link: it.link || '',
+        description: it.description || '',
+        pubDate: it.pubDate || '',
+        guid: it.guid,
+      }));
 
       res.json({ items });
     } catch (err: any) {
@@ -211,8 +220,66 @@ export function activate(api: PluginAPI): void {
       res.status(500).json({ error: err?.message ?? 'Failed to save note' });
     }
   });
+
+  // Scheduler — periodically poll all subscribed feeds across all users and
+  // update per-feed unread counts. Reads refresh interval from plugin settings
+  // (`refreshIntervalMinutes`, default 30). Set to 0 to disable polling.
+  void (async () => {
+    let intervalMin = 30;
+    try {
+      const v = await api.settings.get('refreshIntervalMinutes');
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) intervalMin = n;
+    } catch {
+      // settings unavailable — use default
+    }
+
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (!intervalMin) return;
+
+    const tick = async (): Promise<void> => {
+      try {
+        const entries = await api.storage.list(FEEDS_STORAGE_KEY);
+        for (const entry of entries) {
+          if (entry.key !== FEEDS_STORAGE_KEY || !entry.userId) continue;
+          const feeds = (entry.value as Feed[] | null) ?? [];
+          let dirty = false;
+          for (const feed of feeds) {
+            try {
+              const xml = await fetchUrl(feed.url);
+              const { items } = parseFeed(xml);
+              const seen = new Set(feed.seenGuids ?? []);
+              const fresh = items.filter((i) => i.guid && !seen.has(i.guid));
+              if (fresh.length) {
+                feed.seenGuids = Array.from(new Set([
+                  ...(feed.seenGuids ?? []),
+                  ...items.map((i) => i.guid).filter(Boolean),
+                ])).slice(-500);
+                feed.unread = (feed.unread ?? 0) + fresh.length;
+                dirty = true;
+              } else if (feed.seenGuids === undefined) {
+                // First sight — record current guids without bumping unread
+                feed.seenGuids = items.map((i) => i.guid).filter(Boolean);
+                if (feed.unread === undefined) feed.unread = 0;
+                dirty = true;
+              }
+            } catch (e: any) {
+              api.log.warn(`[rss-reader] poll failed for ${feed.url}: ${e?.message ?? e}`);
+            }
+          }
+          if (dirty) {
+            await api.storage.set(FEEDS_STORAGE_KEY, feeds, entry.userId);
+          }
+        }
+      } catch (e: any) {
+        api.log.warn(`[rss-reader] scheduler tick error: ${e?.message ?? e}`);
+      }
+    };
+
+    pollTimer = setInterval(() => { void tick(); }, intervalMin * 60_000);
+  })();
 }
 
 export function deactivate(): void {
-  // Nothing to clean up
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
