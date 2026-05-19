@@ -41,9 +41,13 @@ function noteLabel(path: string): string {
 }
 
 function notePath(path: string): string {
+  // Parent folder path, or empty string for vault-root files. Callers
+  // should omit the secondary line entirely when this is empty rather
+  // than rendering a bare "/" — a single slash is meaningless to the
+  // user (it just means "this file lives at the top of the vault").
   const parts = path.split('/');
   parts.pop();
-  return parts.join('/') || '/';
+  return parts.join('/');
 }
 
 export function activate(api: ClientPluginAPI): void {
@@ -65,7 +69,7 @@ export function activate(api: ClientPluginAPI): void {
     }, [currentNote?.path, userId, maxItems]);
 
     const handleNavigate = useCallback((path: string) => {
-      api.api.fetch(`/notes/${encodeURIComponent(path)}`).catch(() => {});
+      api.notes.openByPath(path).catch(() => {});
     }, []);
 
     const handleClear = useCallback(() => {
@@ -73,39 +77,101 @@ export function activate(api: ClientPluginAPI): void {
       setItems([]);
     }, [userId]);
 
+    // Section header — matches the look of the host sidebar sections
+    // ("FAVORITES", "FILES", "TAGS") so users immediately recognise
+    // this as a Recent panel and not the tail of Tags above.
+    const header = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'Recent'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(items.length)),
+    );
+
     if (items.length === 0) {
-      return h('div', { className: 'flex flex-col h-full' },
-        h('div', { className: 'flex-1 flex items-center justify-center p-4 text-sm text-gray-400 dark:text-gray-500' },
-          'No recently opened files.'
-        )
+      return h('div', { className: 'flex flex-col' },
+        header,
+        h('div', {
+          style: {
+            padding: '6px 12px 10px',
+            color: 'var(--fg-4)',
+            fontSize: 11.5,
+            fontStyle: 'italic',
+          },
+        }, 'No recently opened files.'),
       );
     }
 
-    return h('div', { className: 'flex flex-col h-full' },
-      h('ul', { className: 'flex-1 overflow-y-auto py-1' },
-        items.map((path: string) =>
-          h('li', { key: path },
+    return h('div', { className: 'flex flex-col' },
+      header,
+      h('ul', { style: { listStyle: 'none', padding: 0, margin: 0 } },
+        items.map((path: string) => {
+          const folder = notePath(path);
+          return h('li', { key: path },
             h('button', {
               onClick: () => handleNavigate(path),
-              className: 'w-full text-left px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group',
+              className: 'w-full text-left transition-colors group',
               title: path,
+              style: {
+                width: '100%',
+                textAlign: 'left',
+                padding: '4px 12px',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--fg-1)',
+              },
             },
-              h('span', { className: 'block text-sm text-gray-800 dark:text-gray-200 truncate' },
-                noteLabel(path)
-              ),
-              h('span', { className: 'block text-xs text-gray-400 dark:text-gray-500 truncate' },
-                notePath(path)
-              )
-            )
-          )
-        )
+              h('span', {
+                style: {
+                  display: 'block',
+                  fontSize: 12.5,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                },
+              }, noteLabel(path)),
+              // Only render the parent-folder line when there IS one.
+              // For vault-root notes (folder === '') a single "/" is
+              // noise — better to omit the subtitle entirely.
+              folder
+                ? h('span', {
+                    style: {
+                      display: 'block',
+                      fontSize: 10.5,
+                      color: 'var(--fg-4)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    },
+                  }, folder)
+                : null,
+            ),
+          );
+        }),
       ),
-      h('div', { className: 'px-3 py-2 border-t border-gray-200 dark:border-gray-700' },
+      h('div', { style: { padding: '4px 12px 8px' } },
         h('button', {
           onClick: handleClear,
-          className: 'text-xs text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors',
-        }, 'Clear History')
-      )
+          style: {
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            fontSize: 11,
+            color: 'var(--fg-4)',
+          },
+        }, 'Clear history'),
+      ),
     );
   }
 
