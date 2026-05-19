@@ -5,50 +5,83 @@ const { createElement: h, useState, useEffect } = React;
 
 const STYLE_ELEMENT_ID = 'kryton-theme-settings-styles';
 
-/** Build the CSS string from the current settings values. */
-function buildStyles(
-  accentColor: string,
-  fontSize: number,
-  editorFont: string,
-  lineHeight: string,
-  contentWidth: number,
-): string {
+// ---------------------------------------------------------------------------
+// Presets — mirror of plugins/theme-settings/presets.js (source of truth,
+// covered by __tests__/presets.test.js). esbuild builds this client standalone
+// so we inline.
+// ---------------------------------------------------------------------------
+
+type ThemeMode = 'light' | 'dark' | 'system';
+
+interface Preset {
+  name: string;
+  accent: string;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  contentMaxWidth: number;
+  mode: ThemeMode;
+}
+
+const PRESETS: Record<string, Preset> = {
+  default: {
+    name: 'Default', accent: '#8b5cf6', fontFamily: 'system-ui',
+    fontSize: 16, lineHeight: 1.6, contentMaxWidth: 800, mode: 'system',
+  },
+  'solarized-light': {
+    name: 'Solarized Light', accent: '#268bd2', fontFamily: 'Menlo, monospace',
+    fontSize: 15, lineHeight: 1.7, contentMaxWidth: 720, mode: 'light',
+  },
+  'solarized-dark': {
+    name: 'Solarized Dark', accent: '#b58900', fontFamily: 'Menlo, monospace',
+    fontSize: 15, lineHeight: 1.7, contentMaxWidth: 720, mode: 'dark',
+  },
+  nord: {
+    name: 'Nord', accent: '#88c0d0', fontFamily: 'Inter, sans-serif',
+    fontSize: 16, lineHeight: 1.6, contentMaxWidth: 800, mode: 'dark',
+  },
+  dracula: {
+    name: 'Dracula', accent: '#bd93f9', fontFamily: 'Fira Code, monospace',
+    fontSize: 15, lineHeight: 1.6, contentMaxWidth: 800, mode: 'dark',
+  },
+};
+
+interface StyleOpts {
+  accent: string;
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number | string;
+  contentMaxWidth: number;
+}
+
+function buildStyles(opts: StyleOpts): string {
+  const { accent, fontFamily, fontSize, lineHeight, contentMaxWidth } = opts;
   return `
-/* Kryton Theme Settings plugin */
-:root {
-  --accent-color: ${accentColor};
-}
-
-body {
-  font-size: ${fontSize}px;
-}
-
-.cm-editor,
-.cm-editor .cm-content {
-  font-family: ${editorFont};
-  line-height: ${lineHeight};
-}
-
-.markdown-preview {
-  max-width: ${contentWidth}px;
-  line-height: ${lineHeight};
-}
-
-/* Apply accent color to common interactive elements */
-a,
-.text-violet-500,
-.text-purple-500 {
-  color: var(--accent-color);
-}
-
-button.bg-violet-500,
-button.bg-purple-500 {
-  background-color: var(--accent-color) !important;
-}
+:root { --accent: ${accent}; --accent-color: ${accent}; --base-font-size: ${fontSize}px; --line-height: ${lineHeight}; --content-max-width: ${contentMaxWidth}px; }
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+body { font-size: ${fontSize}px; }
+body, .cm-editor, .cm-editor .cm-content, .markdown-preview { font-family: ${fontFamily}; line-height: ${lineHeight}; }
+.markdown-preview { max-width: ${contentMaxWidth}px; }
+a, .text-violet-500, .text-purple-500 { color: var(--accent-color); }
+button.bg-violet-500, button.bg-purple-500 { background-color: var(--accent-color) !important; }
 `.trim();
 }
 
-/** Inject or update the <style> element that carries theme overrides. */
+function resolveMode(mode: ThemeMode): 'light' | 'dark' {
+  if (mode === 'system') {
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches
+    ) {
+      return 'dark';
+    }
+    return 'light';
+  }
+  return mode;
+}
+
 function applyStyles(css: string): void {
   let el = document.getElementById(STYLE_ELEMENT_ID) as HTMLStyleElement | null;
   if (!el) {
@@ -59,10 +92,31 @@ function applyStyles(css: string): void {
   el.textContent = css;
 }
 
-/** Remove the injected <style> element entirely. */
+function applyTheme(opts: StyleOpts & { mode: ThemeMode }): void {
+  applyStyles(buildStyles(opts));
+  const resolved = resolveMode(opts.mode);
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.setAttribute('data-theme', resolved);
+  }
+}
+
 function removeStyles(): void {
   const el = document.getElementById(STYLE_ELEMENT_ID);
   if (el) el.remove();
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.removeAttribute('data-theme');
+  }
+}
+
+// Normalize lineHeight: manifest default is string "1.6"; presets use number.
+function lhToString(lh: unknown, fallback: string): string {
+  if (typeof lh === 'number' && Number.isFinite(lh)) return String(lh);
+  if (typeof lh === 'string' && lh.trim()) return lh;
+  return fallback;
+}
+
+function normalizeMode(m: unknown): ThemeMode {
+  return m === 'light' || m === 'dark' || m === 'system' ? m : 'system';
 }
 
 // ---------------------------------------------------------------------------
@@ -70,36 +124,55 @@ function removeStyles(): void {
 // ---------------------------------------------------------------------------
 
 export function activate(api: ClientPluginAPI): void {
-  // --- Settings section UI ---
-
   function ThemeSettingsSection(): any {
+    const presetKey = (api.context.usePluginSettings('preset') as string | null) ?? 'default';
+    const mode = normalizeMode(api.context.usePluginSettings('mode'));
     const accentColor = (api.context.usePluginSettings('accentColor') as string | null) ?? '#8b5cf6';
     const fontSize = (api.context.usePluginSettings('fontSize') as number | null) ?? 14;
     const editorFont = (api.context.usePluginSettings('editorFont') as string | null) ?? 'monospace';
-    const lineHeight = (api.context.usePluginSettings('lineHeight') as string | null) ?? '1.6';
+    const lineHeight = lhToString(api.context.usePluginSettings('lineHeight'), '1.6');
     const contentWidth = (api.context.usePluginSettings('contentWidth') as number | null) ?? 768;
 
-    // Live-preview: apply styles whenever settings change
     useEffect(() => {
-      const css = buildStyles(accentColor, fontSize, editorFont, lineHeight, contentWidth);
-      applyStyles(css);
-    }, [accentColor, fontSize, editorFont, lineHeight, contentWidth]);
+      applyTheme({
+        accent: accentColor,
+        fontFamily: editorFont,
+        fontSize,
+        lineHeight,
+        contentMaxWidth: contentWidth,
+        mode,
+      });
+    }, [accentColor, fontSize, editorFont, lineHeight, contentWidth, mode]);
 
+    const [localPreset, setLocalPreset] = useState<string>(presetKey);
+    const [localMode, setLocalMode] = useState<ThemeMode>(mode);
     const [localAccent, setLocalAccent] = useState<string>(accentColor);
     const [localFontSize, setLocalFontSize] = useState<string>(String(fontSize));
     const [localEditorFont, setLocalEditorFont] = useState<string>(editorFont);
     const [localLineHeight, setLocalLineHeight] = useState<string>(lineHeight);
     const [localContentWidth, setLocalContentWidth] = useState<string>(String(contentWidth));
 
+    function handlePresetChange(key: string): void {
+      setLocalPreset(key);
+      const p = PRESETS[key];
+      if (!p) return;
+      setLocalAccent(p.accent);
+      setLocalFontSize(String(p.fontSize));
+      setLocalEditorFont(p.fontFamily);
+      setLocalLineHeight(String(p.lineHeight));
+      setLocalContentWidth(String(p.contentMaxWidth));
+      setLocalMode(p.mode);
+    }
+
     function handlePreview(): void {
-      const css = buildStyles(
-        localAccent,
-        Number(localFontSize) || 14,
-        localEditorFont,
-        localLineHeight,
-        Number(localContentWidth) || 768,
-      );
-      applyStyles(css);
+      applyTheme({
+        accent: localAccent,
+        fontFamily: localEditorFont,
+        fontSize: Number(localFontSize) || 14,
+        lineHeight: localLineHeight,
+        contentMaxWidth: Number(localContentWidth) || 768,
+        mode: localMode,
+      });
       api.notify.success('Preview applied. Save your settings to persist.');
     }
 
@@ -116,6 +189,39 @@ export function activate(api: ClientPluginAPI): void {
 
       h('h3', { className: 'text-base font-semibold mb-4 text-gray-800 dark:text-gray-200' },
         'Appearance'),
+
+      // Preset dropdown
+      h('div', { className: rowClass },
+        h('label', { className: labelClass }, 'Preset'),
+        h('select', {
+          value: localPreset,
+          onChange: (e: any) => handlePresetChange(e.target.value),
+          className: inputClass,
+        },
+          ...Object.keys(PRESETS).map((k) =>
+            h('option', { key: k, value: k }, PRESETS[k].name),
+          ),
+        ),
+      ),
+
+      // Mode radio group
+      h('div', { className: rowClass },
+        h('label', { className: labelClass }, 'Color mode'),
+        h('div', { className: 'flex items-center gap-4' },
+          ...(['light', 'dark', 'system'] as ThemeMode[]).map((m) =>
+            h('label', { key: m, className: 'flex items-center gap-1 text-sm text-gray-700 dark:text-gray-300' },
+              h('input', {
+                type: 'radio',
+                name: 'theme-mode',
+                value: m,
+                checked: localMode === m,
+                onChange: () => setLocalMode(m),
+              }),
+              m.charAt(0).toUpperCase() + m.slice(1),
+            ),
+          ),
+        ),
+      ),
 
       // Accent color
       h('div', { className: rowClass },
@@ -137,57 +243,46 @@ export function activate(api: ClientPluginAPI): void {
         ),
       ),
 
-      // Base font size
       h('div', { className: rowClass },
         h('label', { className: labelClass }, 'Base font size (px)'),
         h('input', {
           type: 'number',
           value: localFontSize,
           onChange: (e: any) => setLocalFontSize(e.target.value),
-          min: 10,
-          max: 32,
-          className: inputClass,
+          min: 10, max: 32, className: inputClass,
         }),
       ),
 
-      // Editor font family
       h('div', { className: rowClass },
         h('label', { className: labelClass }, 'Editor font family'),
         h('input', {
           type: 'text',
           value: localEditorFont,
           onChange: (e: any) => setLocalEditorFont(e.target.value),
-          className: inputClass,
-          placeholder: 'monospace',
+          className: inputClass, placeholder: 'monospace',
         }),
       ),
 
-      // Line height
       h('div', { className: rowClass },
         h('label', { className: labelClass }, 'Line height'),
         h('input', {
           type: 'text',
           value: localLineHeight,
           onChange: (e: any) => setLocalLineHeight(e.target.value),
-          className: inputClass,
-          placeholder: '1.6',
+          className: inputClass, placeholder: '1.6',
         }),
       ),
 
-      // Content max width
       h('div', { className: rowClass },
         h('label', { className: labelClass }, 'Content max width (px)'),
         h('input', {
           type: 'number',
           value: localContentWidth,
           onChange: (e: any) => setLocalContentWidth(e.target.value),
-          min: 400,
-          max: 1600,
-          className: inputClass,
+          min: 400, max: 1600, className: inputClass,
         }),
       ),
 
-      // Preview button
       h('button', {
         onClick: handlePreview,
         className:
@@ -202,28 +297,55 @@ export function activate(api: ClientPluginAPI): void {
     title: 'Theme Settings',
   });
 
-  // Apply persisted settings on activation (initial load)
-  // We read settings via a one-time component mount side-effect below.
-  // Because we only have access to settings inside React components,
-  // we trigger initial application through a tiny mount-only component
-  // that is never visible but always renders.
+  // Always-mounted applier so saved settings apply on load and react to changes.
   function ThemeApplier(): any {
+    const mode = normalizeMode(api.context.usePluginSettings('mode'));
     const accentColor = (api.context.usePluginSettings('accentColor') as string | null) ?? '#8b5cf6';
     const fontSize = (api.context.usePluginSettings('fontSize') as number | null) ?? 14;
     const editorFont = (api.context.usePluginSettings('editorFont') as string | null) ?? 'monospace';
-    const lineHeight = (api.context.usePluginSettings('lineHeight') as string | null) ?? '1.6';
+    const lineHeight = lhToString(api.context.usePluginSettings('lineHeight'), '1.6');
     const contentWidth = (api.context.usePluginSettings('contentWidth') as number | null) ?? 768;
 
     useEffect(() => {
-      const css = buildStyles(accentColor, fontSize, editorFont, lineHeight, contentWidth);
-      applyStyles(css);
-    }, [accentColor, fontSize, editorFont, lineHeight, contentWidth]);
+      applyTheme({
+        accent: accentColor,
+        fontFamily: editorFont,
+        fontSize,
+        lineHeight,
+        contentMaxWidth: contentWidth,
+        mode,
+      });
+    }, [accentColor, fontSize, editorFont, lineHeight, contentWidth, mode]);
+
+    // Re-apply on system color-scheme changes when mode is 'system'.
+    useEffect(() => {
+      if (mode !== 'system') return;
+      if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const onChange = (): void => {
+        applyTheme({
+          accent: accentColor,
+          fontFamily: editorFont,
+          fontSize,
+          lineHeight,
+          contentMaxWidth: contentWidth,
+          mode,
+        });
+      };
+      if (typeof mq.addEventListener === 'function') {
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+      }
+      if (typeof (mq as any).addListener === 'function') {
+        (mq as any).addListener(onChange);
+        return () => (mq as any).removeListener(onChange);
+      }
+      return undefined;
+    }, [mode, accentColor, fontSize, editorFont, lineHeight, contentWidth]);
 
     return null;
   }
 
-  // Register as a status-bar item with zero visual footprint so the
-  // ThemeApplier component is mounted and can react to settings changes.
   api.ui.registerStatusBarItem(ThemeApplier, {
     id: 'theme-settings-applier',
     position: 'right',

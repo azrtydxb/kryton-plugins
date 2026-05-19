@@ -10,6 +10,20 @@
   "client": "client/index.js",
   "settings": [
     {
+      "key": "preset",
+      "type": "string",
+      "default": "default",
+      "label": "Theme preset",
+      "perUser": true
+    },
+    {
+      "key": "mode",
+      "type": "string",
+      "default": "system",
+      "label": "Dark mode (light | dark | system)",
+      "perUser": true
+    },
+    {
       "key": "accentColor",
       "type": "string",
       "default": "#8b5cf6",
