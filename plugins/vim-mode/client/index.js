@@ -516,39 +516,6 @@ function activate(api) {
     position: "left",
     order: 1
   });
-  function VimToggle() {
-    const m = useModeListener();
-    void m;
-    const [on, setOn] = useState(enabled);
-    function toggle() {
-      enabled = !enabled;
-      setOn(enabled);
-      api.storage.set("enabled", enabled).catch(() => {
-      });
-      if (!enabled) {
-        setMode("normal");
-        buffer = "";
-      }
-      broadcast();
-    }
-    return h(
-      "div",
-      { className: "flex items-center gap-1.5 mr-2" },
-      h("span", { className: "text-xs text-gray-400" }, "Vim"),
-      h(
-        "button",
-        {
-          onClick: toggle,
-          className: "relative inline-flex h-5 w-9 items-center rounded-full transition-colors " + (on ? "bg-violet-500" : "bg-gray-600"),
-          title: on ? "Disable Vim mode" : "Enable Vim mode"
-        },
-        h("span", {
-          className: "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform " + (on ? "translate-x-4" : "translate-x-1")
-        })
-      )
-    );
-  }
-  api.ui.registerEditorToolbarButton(VimToggle, { id: "vim-toggle", order: 100 });
   api.commands.register({
     id: "vim:toggle",
     name: "Toggle Vim mode",

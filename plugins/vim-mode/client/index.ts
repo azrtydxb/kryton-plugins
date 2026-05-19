@@ -584,34 +584,9 @@ export function activate(api: ClientPluginAPI): void {
     order: 1,
   });
 
-  // ---- Toolbar toggle button ----
-  function VimToggle(): any {
-    const m = useModeListener();
-    void m; // re-render hook
-    const [on, setOn] = useState<boolean>(enabled);
-    function toggle(): void {
-      enabled = !enabled;
-      setOn(enabled);
-      api.storage.set('enabled', enabled).catch(() => { /* ignore */ });
-      if (!enabled) { setMode('normal'); buffer = ''; }
-      broadcast();
-    }
-    return h('div', { className: 'flex items-center gap-1.5 mr-2' },
-      h('span', { className: 'text-xs text-gray-400' }, 'Vim'),
-      h('button', {
-        onClick: toggle,
-        className: 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors ' +
-          (on ? 'bg-violet-500' : 'bg-gray-600'),
-        title: on ? 'Disable Vim mode' : 'Enable Vim mode',
-      },
-        h('span', {
-          className: 'inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ' +
-            (on ? 'translate-x-4' : 'translate-x-1'),
-        })
-      )
-    );
-  }
-  api.ui.registerEditorToolbarButton(VimToggle, { id: 'vim-toggle', order: 100 });
+  // Toolbar toggle removed — vim on/off is controlled via the command
+  // palette ('Toggle Vim mode' / vim:toggle) and persisted in api.storage.
+  // Status bar mode indicator remains the at-a-glance affordance.
 
   // ---- Commands ----
   api.commands.register({
