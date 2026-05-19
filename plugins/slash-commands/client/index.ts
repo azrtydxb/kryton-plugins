@@ -1,225 +1,200 @@
-import type { ClientPluginAPI } from '../../../types/client';
+// Slash-commands plugin — ported to the custom editor (Phase 2 / 2026-05-19).
+//
+// The original implementation targeted CodeMirror 6 ViewPlugins, which no
+// longer exist in the host. The host's editor exposes an `EditorPlugin`
+// interface with an `onKeyDown` cascade and a (declared-but-unconsumed)
+// `suggestions` hook. As of this writing nothing in the host renders the
+// suggestion popup, so we drive our own absolute-positioned menu via DOM
+// and intercept Arrow/Enter/Esc through `onKeyDown`.
+//
+// When the host later wires up a built-in suggestion UI consumer of the
+// `suggestions(state, trigger)` hook, this plugin should be simplified to
+// just return `Suggestion[]` from that hook.
 
-const { React } = window.__krytonPluginDeps;
-const { createElement: h, useState, useEffect } = React;
+import type {
+  ClientPluginAPI,
+  EditorState,
+  KeyDownResult,
+  Transaction,
+} from '../../../types/client';
+
+const { React, ReactDOM } = window.__krytonPluginDeps;
+const { createElement: h, useEffect } = React;
 
 // ---------------------------------------------------------------------------
-// Slash command definitions
+// Command table — kept in sync with ../commands.js (esbuild runs with
+// bundle:false so we cannot import from there at runtime).
 // ---------------------------------------------------------------------------
 
 interface SlashCommand {
-  trigger: string;       // e.g. "h1"
-  label: string;         // display label
+  id: string;
+  label: string;
   description: string;
-  insert: (trigger: string) => { text: string; cursorOffset?: number };
+  // Either a literal insert string (possibly containing `$cursor`) or a
+  // dynamic kind that we evaluate at apply-time.
+  insert: string | null;
+  dynamic?: 'date' | 'time' | 'datetime';
 }
 
-function todayISO(): string {
-  const d = new Date();
+function todayISO(d: Date = new Date()): string {
   const yy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yy}-${mm}-${dd}`;
 }
 
-function nowHHMM(): string {
-  const d = new Date();
+function nowHM(d: Date = new Date()): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-const SLASH_COMMANDS: SlashCommand[] = [
-  {
-    trigger: 'h1',
-    label: 'Heading 1',
-    description: 'Large heading',
-    insert: () => ({ text: '# ' }),
-  },
-  {
-    trigger: 'h2',
-    label: 'Heading 2',
-    description: 'Medium heading',
-    insert: () => ({ text: '## ' }),
-  },
-  {
-    trigger: 'h3',
-    label: 'Heading 3',
-    description: 'Small heading',
-    insert: () => ({ text: '### ' }),
-  },
-  {
-    trigger: 'bold',
-    label: 'Bold',
-    description: 'Bold text',
-    insert: () => ({ text: '****', cursorOffset: -2 }),
-  },
-  {
-    trigger: 'italic',
-    label: 'Italic',
-    description: 'Italic text',
-    insert: () => ({ text: '**', cursorOffset: -1 }),
-  },
-  {
-    trigger: 'code',
-    label: 'Code Block',
-    description: 'Fenced code block',
-    insert: () => ({ text: '```\n\n```', cursorOffset: -4 }),
-  },
-  {
-    trigger: 'table',
-    label: 'Table',
-    description: '2x2 table template',
-    insert: () => ({
-      text: '| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell 1   | Cell 2   |\n| Cell 3   | Cell 4   |',
-    }),
-  },
-  {
-    trigger: 'date',
-    label: 'Date',
-    description: 'Insert today\'s date (YYYY-MM-DD)',
-    insert: () => ({ text: todayISO() }),
-  },
-  {
-    trigger: 'time',
-    label: 'Time',
-    description: 'Insert current time (HH:MM)',
-    insert: () => ({ text: nowHHMM() }),
-  },
-  {
-    trigger: 'todo',
-    label: 'Todo Item',
-    description: 'Task list item',
-    insert: () => ({ text: '- [ ] ' }),
-  },
-  {
-    trigger: 'divider',
-    label: 'Divider',
-    description: 'Horizontal rule',
-    insert: () => ({ text: '---' }),
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Floating menu component
-// ---------------------------------------------------------------------------
-
-interface MenuProps {
-  commands: SlashCommand[];
-  query: string;
-  onSelect: (cmd: SlashCommand) => void;
-  onDismiss: () => void;
-  position: { top: number; left: number };
+function nowISO(d: Date = new Date()): string {
+  return d.toISOString();
 }
 
-function SlashMenu(props: MenuProps): any {
-  const { commands, query, onSelect, onDismiss, position } = props;
-  const [activeIndex, setActiveIndex] = useState(0);
+const COMMANDS: SlashCommand[] = [
+  { id: 'h1',         label: 'Heading 1',     description: 'Large heading',                       insert: '# ' },
+  { id: 'h2',         label: 'Heading 2',     description: 'Medium heading',                      insert: '## ' },
+  { id: 'h3',         label: 'Heading 3',     description: 'Small heading',                       insert: '### ' },
+  { id: 'bold',       label: 'Bold',          description: 'Bold text',                           insert: '**$cursor**' },
+  { id: 'italic',     label: 'Italic',        description: 'Italic text',                         insert: '*$cursor*' },
+  { id: 'code',       label: 'Inline Code',   description: 'Inline code span',                    insert: '`$cursor`' },
+  { id: 'codeblock',  label: 'Code Block',    description: 'Fenced code block',                   insert: '```lang\n$cursor\n```' },
+  { id: 'quote',      label: 'Quote',         description: 'Block quote',                         insert: '> ' },
+  { id: 'divider',    label: 'Divider',       description: 'Horizontal rule',                     insert: '\n---\n' },
+  { id: 'table',      label: 'Table',         description: '2x2 table template',                  insert: '\n| Col1 | Col2 |\n|------|------|\n| $cursor |  |\n' },
+  { id: 'todo',       label: 'Todo Item',     description: 'Task list item',                      insert: '- [ ] ' },
+  { id: 'date',       label: 'Date',          description: "Insert today's date (YYYY-MM-DD)",    insert: null, dynamic: 'date' },
+  { id: 'time',       label: 'Time',          description: 'Insert current time (HH:mm)',         insert: null, dynamic: 'time' },
+  { id: 'datetime',   label: 'Datetime',      description: 'Insert current ISO datetime',         insert: null, dynamic: 'datetime' },
+  { id: 'kanban',     label: 'Kanban Board',  description: 'Insert kanban code fence',            insert: '```kanban\n## Todo\n## In Progress\n## Done\n```' },
+  { id: 'excalidraw', label: 'Excalidraw',    description: 'Insert excalidraw code fence',        insert: '```excalidraw\n{"elements":[]}\n```' },
+  { id: 'mermaid',    label: 'Mermaid',       description: 'Insert mermaid diagram',              insert: '```mermaid\ngraph TD\n  A --> B\n```' },
+];
 
-  const filtered = commands.filter((c) =>
-    c.trigger.startsWith(query.toLowerCase()) || c.label.toLowerCase().includes(query.toLowerCase())
+function filterCommands(query: string): SlashCommand[] {
+  if (!query) return COMMANDS.slice();
+  const q = query.toLowerCase();
+  return COMMANDS.filter((c) =>
+    c.id.toLowerCase().startsWith(q) || c.label.toLowerCase().includes(q)
   );
+}
 
-  // Reset active index when filtered list changes
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
+function resolveInsert(cmd: SlashCommand): string {
+  if (cmd.dynamic === 'date') return todayISO();
+  if (cmd.dynamic === 'time') return nowHM();
+  if (cmd.dynamic === 'datetime') return nowISO();
+  return cmd.insert ?? '';
+}
 
-  // Keyboard handler
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent): void {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActiveIndex((i: number) => (i + 1) % Math.max(filtered.length, 1));
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActiveIndex((i: number) => (i - 1 + Math.max(filtered.length, 1)) % Math.max(filtered.length, 1));
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        if (filtered[activeIndex]) onSelect(filtered[activeIndex]);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        onDismiss();
-      }
+// ---------------------------------------------------------------------------
+// Trigger detection — "/" at start of line, or after whitespace, with no
+// non-word characters between the slash and the caret.
+// ---------------------------------------------------------------------------
+
+interface TriggerMatch {
+  /** Document offset of the "/" character. */
+  from: number;
+  /** Caret offset (== from + 1 + query.length). */
+  caret: number;
+  /** Text typed after the slash. */
+  query: string;
+}
+
+function detectTrigger(state: EditorState): TriggerMatch | null {
+  const caret = state.selection.head;
+  if (caret !== state.selection.anchor) return null; // ignore non-empty sel
+  const doc = state.doc;
+  // Walk back from the caret to find a "/" preceded by whitespace or BOL.
+  // Bail if we hit whitespace or another non-word character first.
+  let i = caret;
+  while (i > 0) {
+    const ch = doc[i - 1];
+    if (ch === '/') {
+      const before = i >= 2 ? doc[i - 2] : '';
+      const isBOL = i - 1 === 0 || before === '\n';
+      const isAfterWS = before === ' ' || before === '\t';
+      if (!isBOL && !isAfterWS) return null;
+      const query = doc.slice(i, caret);
+      // Disallow whitespace inside the query — the menu closes as soon as
+      // the user types a space.
+      if (/\s/.test(query)) return null;
+      return { from: i - 1, caret, query };
     }
-    document.addEventListener('keydown', handleKey, true);
-    return () => document.removeEventListener('keydown', handleKey, true);
-  }, [filtered, activeIndex, onSelect, onDismiss]);
+    if (ch === '\n' || ch === ' ' || ch === '\t') return null;
+    i -= 1;
+  }
+  return null;
+}
 
-  if (filtered.length === 0) {
+// ---------------------------------------------------------------------------
+// Floating menu component (React, rendered into a body-level mount node).
+// ---------------------------------------------------------------------------
+
+interface MenuModel {
+  visible: boolean;
+  query: string;
+  position: { top: number; left: number };
+  activeIndex: number;
+}
+
+interface SlashMenuProps {
+  model: MenuModel;
+  onPick: (cmd: SlashCommand) => void;
+  onHoverIndex: (i: number) => void;
+}
+
+function SlashMenu(props: SlashMenuProps): unknown {
+  const { model, onPick, onHoverIndex } = props;
+  const matches = filterCommands(model.query);
+
+  // Reset hover on query change. Owner already mirrors activeIndex; this is
+  // just for visual feedback when the list shrinks under the active row.
+  useEffect(() => {
+    if (model.activeIndex >= matches.length) onHoverIndex(0);
+  }, [model.query, matches.length, model.activeIndex, onHoverIndex]);
+
+  if (!model.visible) return null;
+
+  const baseStyle: Record<string, string | number> = {
+    position: 'fixed',
+    top: model.position.top,
+    left: model.position.left,
+    background: 'var(--color-surface, #1e1e2e)',
+    border: '1px solid var(--color-border, #3f3f5a)',
+    borderRadius: '8px',
+    zIndex: 9999,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    fontFamily: 'inherit',
+  };
+
+  if (matches.length === 0) {
     return h('div', {
-      style: {
-        position: 'fixed',
-        top: position.top,
-        left: position.left,
-        background: 'var(--color-surface, #1e1e2e)',
-        border: '1px solid var(--color-border, #3f3f5a)',
-        borderRadius: '8px',
-        padding: '8px',
-        zIndex: 9999,
-        fontSize: '13px',
-        color: 'var(--color-muted, #888)',
-        minWidth: '200px',
-      },
+      style: { ...baseStyle, padding: '8px 10px', fontSize: '13px', color: 'var(--color-muted, #888)', minWidth: '220px' },
     }, 'No matching commands');
   }
 
   return h('div', {
-    style: {
-      position: 'fixed',
-      top: position.top,
-      left: position.left,
-      background: 'var(--color-surface, #1e1e2e)',
-      border: '1px solid var(--color-border, #3f3f5a)',
-      borderRadius: '8px',
-      padding: '4px',
-      zIndex: 9999,
-      minWidth: '220px',
-      maxHeight: '280px',
-      overflowY: 'auto',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-    },
+    style: { ...baseStyle, padding: '4px', minWidth: '240px', maxHeight: '320px', overflowY: 'auto' },
   },
-    filtered.map((cmd, i) =>
+    matches.map((cmd, i) =>
       h('div', {
-        key: cmd.trigger,
-        onClick: () => onSelect(cmd),
+        key: cmd.id,
+        onMouseDown: (e: MouseEvent) => { e.preventDefault(); onPick(cmd); },
+        onMouseEnter: () => onHoverIndex(i),
         style: {
           display: 'flex',
           flexDirection: 'column',
           padding: '6px 10px',
           borderRadius: '4px',
           cursor: 'pointer',
-          background: i === activeIndex ? 'var(--color-accent-muted, rgba(139,92,246,0.2))' : 'transparent',
+          background: i === model.activeIndex ? 'var(--color-accent-muted, rgba(139,92,246,0.2))' : 'transparent',
         },
-        onMouseEnter: () => setActiveIndex(i),
       },
-        h('span', {
-          style: {
-            fontSize: '13px',
-            fontWeight: '500',
-            color: 'var(--color-text, #e0e0e0)',
-          },
-        }, cmd.label),
-        h('span', {
-          style: {
-            fontSize: '11px',
-            color: 'var(--color-muted, #888)',
-            marginTop: '1px',
-          },
-        }, cmd.description)
+        h('span', { style: { fontSize: '13px', fontWeight: 500, color: 'var(--color-text, #e0e0e0)' } }, cmd.label),
+        h('span', { style: { fontSize: '11px', color: 'var(--color-muted, #888)', marginTop: '1px' } }, cmd.description)
       )
     )
   );
-}
-
-// ---------------------------------------------------------------------------
-// Plugin state
-// ---------------------------------------------------------------------------
-
-interface MenuState {
-  visible: boolean;
-  query: string;
-  position: { top: number; left: number };
-  triggerFrom: number;  // document position where slash was typed
 }
 
 // ---------------------------------------------------------------------------
@@ -227,241 +202,219 @@ interface MenuState {
 // ---------------------------------------------------------------------------
 
 export function activate(api: ClientPluginAPI): void {
-  // We build a CodeMirror ViewPlugin that intercepts input to detect /
-  // at the start of a line and manages a React-rendered floating menu.
-
+  // Mount point for the floating menu, lazily created on first use so we
+  // don't pollute the DOM when the plugin is loaded but never triggered.
   let mountPoint: HTMLDivElement | null = null;
-  let menuState: MenuState = { visible: false, query: '', position: { top: 0, left: 0 }, triggerFrom: -1 };
-  let currentView: any = null;
+  let reactRoot: { render: (el: unknown) => void; unmount: () => void } | null = null;
 
-  function renderMenu(): void {
+  let model: MenuModel = {
+    visible: false,
+    query: '',
+    position: { top: 0, left: 0 },
+    activeIndex: 0,
+  };
+  // The trigger we are currently tracking. Snapshotted so apply() knows the
+  // exact [from..caret] range to replace even if the document mutated.
+  let trigger: TriggerMatch | null = null;
+
+  function ensureMount(): void {
+    if (mountPoint) return;
+    mountPoint = document.createElement('div');
+    mountPoint.id = 'slash-commands-menu-root';
+    document.body.appendChild(mountPoint);
+    if (ReactDOM && (ReactDOM as { createRoot?: unknown }).createRoot) {
+      reactRoot = (ReactDOM as { createRoot: (el: HTMLElement) => typeof reactRoot }).createRoot(mountPoint) as typeof reactRoot;
+    }
+  }
+
+  function render(): void {
+    ensureMount();
     if (!mountPoint) return;
-    if (!menuState.visible) {
-      // Use React 18 createRoot if available, else fallback
-      const ReactDOM = (window as any).__krytonPluginDeps?.ReactDOM;
-      if (ReactDOM?.createRoot) {
-        // We'll just unmount by rendering null
-      }
-      mountPoint.innerHTML = '';
-      return;
-    }
-
     const el = h(SlashMenu, {
-      commands: SLASH_COMMANDS,
-      query: menuState.query,
-      onSelect: (cmd: SlashCommand) => {
-        applyCommand(cmd);
-      },
-      onDismiss: () => {
-        hideMenu();
-      },
-      position: menuState.position,
+      model,
+      onPick: (cmd: SlashCommand) => apply(cmd),
+      onHoverIndex: (i: number) => { model = { ...model, activeIndex: i }; render(); },
     });
+    if (reactRoot) {
+      reactRoot.render(el);
+    } else if (ReactDOM && (ReactDOM as { render?: unknown }).render) {
+      (ReactDOM as { render: (el: unknown, target: HTMLElement) => void }).render(el, mountPoint);
+    }
+  }
 
-    // Use simple innerHTML approach via createRoot or legacy render
-    const ReactDOM = (window as any).__krytonPluginDeps?.ReactDOM;
-    if (ReactDOM) {
-      if (ReactDOM.createRoot) {
-        if (!(mountPoint as any)._root) {
-          (mountPoint as any)._root = ReactDOM.createRoot(mountPoint);
+  function show(t: TriggerMatch): void {
+    trigger = t;
+    const pos = caretViewportPosition();
+    model = { visible: true, query: t.query, position: pos, activeIndex: 0 };
+    render();
+  }
+
+  function update(t: TriggerMatch): void {
+    trigger = t;
+    const matches = filterCommands(t.query);
+    const activeIndex = Math.min(model.activeIndex, Math.max(matches.length - 1, 0));
+    model = { ...model, visible: true, query: t.query, activeIndex };
+    render();
+  }
+
+  function hide(): void {
+    if (!model.visible && !trigger) return;
+    trigger = null;
+    model = { ...model, visible: false };
+    render();
+  }
+
+  function caretViewportPosition(): { top: number; left: number } {
+    // Read the caret rect from the DOM selection. Falls back to a sensible
+    // default if there's no selection range (e.g. focus lost mid-render).
+    try {
+      const sel = window.getSelection?.();
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0).cloneRange();
+        range.collapse(true);
+        const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+        if (rect && (rect.top || rect.left)) {
+          return { top: rect.bottom + 4, left: rect.left };
         }
-        (mountPoint as any)._root.render(el);
-      } else {
-        ReactDOM.render(el, mountPoint);
-      }
-    }
-  }
-
-  function showMenu(view: any, from: number, query: string): void {
-    currentView = view;
-
-    // Compute cursor coordinates from CodeMirror
-    let top = 200;
-    let left = 200;
-    try {
-      const coords = view.coordsAtPos(from);
-      if (coords) {
-        top = coords.bottom + 4;
-        left = coords.left;
       }
     } catch {
       // ignore
     }
-
-    menuState = { visible: true, query, position: { top, left }, triggerFrom: from };
-    renderMenu();
+    return { top: 120, left: 120 };
   }
 
-  function updateMenu(view: any, from: number, query: string): void {
-    currentView = view;
-    let top = menuState.position.top;
-    let left = menuState.position.left;
-    try {
-      const coords = view.coordsAtPos(from);
-      if (coords) {
-        top = coords.bottom + 4;
-        left = coords.left;
+  function apply(cmd: SlashCommand): void {
+    if (!trigger) { hide(); return; }
+    const state = api.editor.getActiveState();
+    if (!state) { hide(); return; }
+
+    const insert = resolveInsert(cmd);
+    const cursorMarker = '$cursor';
+    const markerIdx = insert.indexOf(cursorMarker);
+    const finalText = markerIdx >= 0
+      ? insert.slice(0, markerIdx) + insert.slice(markerIdx + cursorMarker.length)
+      : insert;
+    const caretOffset = markerIdx >= 0
+      ? markerIdx
+      : finalText.length;
+
+    // Replace [trigger.from .. current caret] with finalText. We re-read the
+    // caret from the live state in case it moved since the trigger fired.
+    const liveCaret = state.selection.head;
+    const from = trigger.from;
+    const to = Math.max(liveCaret, trigger.caret);
+    const tr: Transaction = {
+      ops: [{ kind: 'replace', from, to, text: finalText }],
+      selection: { anchor: from + caretOffset, head: from + caretOffset },
+    };
+    hide();
+    api.editor.dispatch(tr);
+  }
+
+  // Register the editor plugin. We use both:
+  //  - `suggestions` so that when the host gains a built-in suggestion UI
+  //    (see kryton/packages/ui/src/editor/state/plugins.ts), we get picked
+  //    up automatically without a code change.
+  //  - `onKeyDown` to drive the DIY popup in the meantime, intercepting
+  //    Arrow/Enter/Escape while the menu is visible.
+  //  - `onTransaction` so we re-evaluate the trigger after every edit; we
+  //    return null (no rewrite) and only use it as a notification hook.
+  const unregister = api.editor.registerPlugin({
+    name: 'slash-commands',
+
+    suggestions: async (_state, t) => {
+      const tg = t as { kind?: string; query?: string } | undefined;
+      if (!tg || tg.kind !== 'slash') return [];
+      const q = String(tg.query ?? '');
+      return filterCommands(q).map((cmd) => ({
+        id: cmd.id,
+        label: cmd.label,
+        kind: 'command',
+        insert: resolveInsert(cmd).replace('$cursor', ''),
+      }));
+    },
+
+    onTransaction: (_tr, state) => {
+      // Re-evaluate trigger on every transaction. We must defer to a
+      // microtask because the state passed here is pre-application of the
+      // dispatching transaction in some host versions; reading via
+      // getActiveState in a microtask is the safe path.
+      queueMicrotask(() => {
+        const live = api.editor.getActiveState() ?? state;
+        const t = detectTrigger(live);
+        if (!t) {
+          if (model.visible) hide();
+          return;
+        }
+        if (!model.visible) show(t);
+        else update(t);
+      });
+      return null;
+    },
+
+    onKeyDown: (e, state): KeyDownResult => {
+      // If the menu isn't open we don't intercept anything. The slash
+      // character itself flows through normally; we react in onTransaction
+      // once it has landed in the document.
+      if (!model.visible) return null;
+
+      if (e.key === 'Escape') {
+        hide();
+        return 'prevent-default';
       }
-    } catch {
-      // ignore
+      if (e.key === 'ArrowDown') {
+        const matches = filterCommands(model.query);
+        if (matches.length > 0) {
+          model = { ...model, activeIndex: (model.activeIndex + 1) % matches.length };
+          render();
+        }
+        return 'prevent-default';
+      }
+      if (e.key === 'ArrowUp') {
+        const matches = filterCommands(model.query);
+        if (matches.length > 0) {
+          const len = matches.length;
+          model = { ...model, activeIndex: (model.activeIndex - 1 + len) % len };
+          render();
+        }
+        return 'prevent-default';
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        const matches = filterCommands(model.query);
+        const cmd = matches[model.activeIndex];
+        if (cmd) {
+          // We need to apply through the editor dispatch, not from inside
+          // the onKeyDown return: apply() builds and dispatches the right
+          // replace transaction synchronously, so just consume the event.
+          apply(cmd);
+          return 'prevent-default';
+        }
+        // No match — close menu and let Enter through.
+        hide();
+        return null;
+      }
+      // Any other key: let the editor process it normally. The resulting
+      // transaction will fire onTransaction, which will refresh / hide the
+      // menu based on the updated query.
+      void state;
+      return null;
+    },
+  });
+
+  (activate as { _cleanup?: () => void })._cleanup = () => {
+    try { unregister(); } catch { /* ignore */ }
+    if (reactRoot) {
+      try { reactRoot.unmount(); } catch { /* ignore */ }
+      reactRoot = null;
     }
-    menuState = { ...menuState, query, position: { top, left }, triggerFrom: from };
-    renderMenu();
-  }
-
-  function hideMenu(): void {
-    menuState = { visible: false, query: '', position: { top: 0, left: 0 }, triggerFrom: -1 };
-    renderMenu();
-  }
-
-  function applyCommand(cmd: SlashCommand): void {
-    if (!currentView) {
-      hideMenu();
-      return;
-    }
-    const view = currentView;
-    const triggerFrom = menuState.triggerFrom;
-    hideMenu();
-
-    // Delete from triggerFrom (the slash position) to current cursor
-    const cursorHead = view.state.selection.main.head;
-    const { text, cursorOffset = 0 } = cmd.insert(cmd.trigger);
-
-    view.dispatch({
-      changes: { from: triggerFrom, to: cursorHead, insert: text },
-      selection: { anchor: triggerFrom + text.length + cursorOffset },
-    });
-    view.focus();
-  }
-
-  // Build a CodeMirror extension using the EventDispatcher approach
-  // We create a simple extension that hooks into editor DOM events
-  const slashExtension = buildSlashExtension(
-    showMenu,
-    updateMenu,
-    hideMenu,
-    () => menuState,
-  );
-
-  // TODO(slash-commands): port to the custom editor's EditorPlugin API.
-  // The previous implementation targeted CodeMirror 6 ViewPlugins, which
-  // are not available in the new editor. Until ported, the slash menu is
-  // a no-op — the buildSlashExtension code path is retained as reference.
-  void slashExtension;
-  api.editor.registerPlugin({ name: 'slash-commands' });
-
-  // Mount point for the floating menu
-  mountPoint = document.createElement('div');
-  mountPoint.id = 'slash-commands-menu-root';
-  document.body.appendChild(mountPoint);
-
-  (activate as any)._cleanup = () => {
     if (mountPoint) {
-      const ReactDOM = (window as any).__krytonPluginDeps?.ReactDOM;
-      if (ReactDOM) {
-        if ((mountPoint as any)._root) {
-          (mountPoint as any)._root.unmount();
-        } else if (ReactDOM.unmountComponentAtNode) {
-          ReactDOM.unmountComponentAtNode(mountPoint);
-        }
-      }
       mountPoint.remove();
       mountPoint = null;
     }
   };
 }
 
-function buildSlashExtension(
-  showMenu: (view: any, from: number, query: string) => void,
-  updateMenu: (view: any, from: number, query: string) => void,
-  hideMenu: () => void,
-  getMenuState: () => MenuState,
-): any {
-  // Return a CodeMirror 6 Extension — specifically a ViewPlugin
-  // We access the CodeMirror API through the global if available,
-  // otherwise we build a lightweight DOM-event-based fallback.
-  const CM = (window as any).__krytonPluginDeps?.CM6;
-
-  if (CM?.ViewPlugin) {
-    return CM.ViewPlugin.fromClass(
-      class {
-        constructor(_view: any) {}
-        update(update: any): void {
-          if (!update.docChanged && !update.selectionSet) return;
-          const view = update.view;
-          const state = view.state;
-          const head = state.selection.main.head;
-          const line = state.doc.lineAt(head);
-          const lineText = line.text;
-          const colInLine = head - line.from;
-          const textBeforeCursor = lineText.slice(0, colInLine);
-
-          // Check if there's a slash at or before cursor on the same line
-          const slashIdx = textBeforeCursor.lastIndexOf('/');
-          if (slashIdx === -1) {
-            if (getMenuState().visible) hideMenu();
-            return;
-          }
-
-          // Only trigger if the slash is at start of line (possibly with whitespace)
-          const beforeSlash = textBeforeCursor.slice(0, slashIdx).trim();
-          if (beforeSlash !== '') {
-            if (getMenuState().visible) hideMenu();
-            return;
-          }
-
-          const query = textBeforeCursor.slice(slashIdx + 1);
-          const from = line.from + slashIdx;
-
-          if (!getMenuState().visible) {
-            showMenu(view, from, query);
-          } else {
-            updateMenu(view, from, query);
-          }
-        }
-        destroy(): void {
-          hideMenu();
-        }
-      }
-    );
-  }
-
-  // Fallback: DOM-event-based listener attached to cm-editor
-  return {
-    _isFallback: true,
-    _attach(view: any) {
-      const dom = view.dom as HTMLElement;
-      function onInput() {
-        const state = view.state;
-        const head = state.selection.main.head;
-        const line = state.doc.lineAt(head);
-        const lineText = line.text;
-        const colInLine = head - line.from;
-        const textBeforeCursor = lineText.slice(0, colInLine);
-        const slashIdx = textBeforeCursor.lastIndexOf('/');
-        if (slashIdx === -1) {
-          if (getMenuState().visible) hideMenu();
-          return;
-        }
-        const beforeSlash = textBeforeCursor.slice(0, slashIdx).trim();
-        if (beforeSlash !== '') {
-          if (getMenuState().visible) hideMenu();
-          return;
-        }
-        const query = textBeforeCursor.slice(slashIdx + 1);
-        const from = line.from + slashIdx;
-        if (!getMenuState().visible) {
-          showMenu(view, from, query);
-        } else {
-          updateMenu(view, from, query);
-        }
-      }
-      dom.addEventListener('input', onInput);
-      dom.addEventListener('keyup', onInput);
-    },
-  };
-}
-
 export function deactivate(): void {
-  if ((activate as any)._cleanup) (activate as any)._cleanup();
+  const cleanup = (activate as { _cleanup?: () => void })._cleanup;
+  if (cleanup) cleanup();
 }
