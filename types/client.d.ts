@@ -128,6 +128,7 @@ export interface ClientPluginAPI {
     registerSettingsSection(component: any, options: { id: string; title: string }): void;
     registerPage(component: any, options: { id: string; path: string; title: string; icon: string; showInSidebar?: boolean }): void;
     registerNoteAction(options: { id: string; label: string; icon: string; onClick: (notePath: string) => void }): void;
+    registerTopbarAction(component: any, options: { id: string; order?: number }): void;
     /**
      * Close the currently focused note pane (Cmd+W intent). No-op when
      * no pane is open or the host has not registered a closePane hook.

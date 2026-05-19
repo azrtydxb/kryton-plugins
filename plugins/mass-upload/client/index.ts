@@ -660,9 +660,12 @@ function UploadButton({ api }: { api: ClientPluginAPI }): any {
 // ─── Plugin entry points ──────────────────────────────────────────────────────
 
 export function activate(api: ClientPluginAPI): void {
-  (api as any).ui.registerEditorToolbarButton(
+  // Always-visible upload action in the topbar, sitting next to the
+  // "+" New note button and the search bar — not inside the editor
+  // toolbar (which would only show in Edit/Split modes).
+  (api as any).ui.registerTopbarAction(
     () => h(UploadButton, { api }),
-    { id: 'mass-upload-btn', order: 100 },
+    { id: 'mass-upload-btn', order: 0 },
   );
 }
 
