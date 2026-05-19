@@ -24,9 +24,11 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 function activate(api) {
   api.log.info("Word Count plugin activated");
-  api.routes.register("get", "/count/:userId/{*notePath}", async (req, res) => {
+  api.routes.register("get", "/count/:userId/*", async (req, res) => {
     try {
-      const { userId, notePath } = req.params;
+      const params = req.params;
+      const userId = params.userId;
+      const notePath = params["*"];
       const note = await api.notes.get(userId, notePath);
       const words = note.content.trim().split(/\s+/).filter(Boolean).length;
       const chars = note.content.length;

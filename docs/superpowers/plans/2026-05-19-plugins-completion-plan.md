@@ -127,6 +127,86 @@ Discrete commits per logical change:
 
 ---
 
+# Phase 4 — Host gap fixes (host-gap-fixes agent)
+
+After Phases 0.5/1/2, four host-side gaps remain. Close all four in one host PR.
+
+### Task 4.1 — Suggestion popup consumer
+
+The `EditorPlugin.suggestions(state, trigger)` hook is declared (`packages/ui/src/editor/state/plugins.ts`) but no host code consumes it. Wire it:
+
+- Detect triggers (`/` at line start or after whitespace; `[[` for wikilink; `#` for tag) inside the editor's keystroke/input pipeline. Emit a `SuggestionTrigger` event.
+- Render a small absolute-positioned popup near the caret. Use React + the same design tokens as the host UI.
+- For each active plugin's `suggestions(state, trigger)` collect items in parallel; merge & dedupe by `id`.
+- Keyboard: ArrowUp/Down navigate, Enter applies, Esc closes.
+- Applying a `Suggestion` replaces `[trigger.from..trigger.caret]` with `insert`.
+
+Add a host test `packages/ui/src/editor/__tests__/suggestions.test.ts` covering: trigger detection, async merge, replacement at correct offsets, keyboard cancel.
+
+### Task 4.2 — `api.notes.saveCurrent()` + `api.ui.closePane()`
+
+Client `api.notes.saveCurrent()` — writes the current editor buffer to disk via the existing `notes.update` path; resolves with `{path, savedAt}`. If no current note, rejects.
+
+Client `api.ui.closePane()` — closes the currently focused editor pane (same intent as Cmd+W). If no pane, no-op.
+
+Mirror both into `ClientPluginAPI` in `packages/ui/src/plugins/types.ts` and `kryton-plugins/types/client.d.ts`.
+
+### Task 4.3 — Raw-file range in fence renderers
+
+Today `range` is parsed-body-relative. Add a second field `rawRange: {startLine, endLine}` (raw on-disk line indices, 0-based, inclusive of the backtick lines). Keep `range` for backward compat. Plugins prefer `rawRange` for round-trips, falling back to locate-by-source.
+
+The raw range is derivable: re-tokenize the raw `notes.get(path)` content to find fences and match by (language, source-prefix) — or, more robustly, hold a side-map produced by the existing markdown→hast pipeline that records original line offsets before any wikilink/embed substitution. Pick whichever is less invasive.
+
+Add a small test that confirms `rawRange` survives a frontmatter block and a wikilink substitution.
+
+### Task 4.4 — Line-number gutter API
+
+Extend `EditorPlugin` with an optional `gutter?(state: EditorState): GutterSpec[]` hook returning `{ line: number; content: string; className?: string }`. Editor view renders the gutter column to the left of content.
+
+OR, lighter: ship a built-in line-number gutter as a host option toggled via `api.editor.setOption('lineNumbers', boolean)`, and have vim-mode's `:set number` call that. Pick the lighter option unless a plugin needs custom gutter content (none do today).
+
+Add a host UI test for the toggle.
+
+### Task 4.5 — Commits
+
+- `feat(ui): built-in suggestion popup consumer + plugin hook`
+- `feat(ui): api.notes.saveCurrent + api.ui.closePane`
+- `feat(ui): expose rawRange in code-fence renderer props`
+- `feat(ui): line-number gutter toggle via api.editor.setOption`
+- `feat(types): mirror new API surface in kryton-plugins/types/client.d.ts`
+
+---
+
+# Phase 5 — Plugin updates against new host APIs
+
+Two parallel agents (independent file ownership).
+
+### Task 5.A — vim-mode polish
+
+Owner: `plugins/vim-mode/**`.
+
+- `:w` → `await api.notes.saveCurrent()`. Remove the Cmd/Ctrl+S synthesis.
+- `:q` → `api.ui.closePane()`. Remove the no-op notify.
+- `:wq` → save then close.
+- `:set number` / `:set nu` → `api.editor.setOption('lineNumbers', true)`.
+- `:set nonumber` / `:set nonu` → `api.editor.setOption('lineNumbers', false)`. Remove the CustomEvent / class hack.
+- Tests: extend `vim-engine.test.js` with assertions that the engine returns `{kind:'save'}` / `{kind:'close'}` / `{kind:'set-option', option, value}` for these ex commands (engine stays pure; client maps to API calls).
+
+### Task 5.B — slash-commands rework
+
+Owner: `plugins/slash-commands/**`.
+
+- Remove the DIY popup. Keep only the `EditorPlugin.suggestions` hook implementation.
+- The host built-in popup (Phase 4.1) now consumes it.
+- Verify all 17 commands still work via the new popup.
+- Tests unchanged (still validate `filterCommands` + `insert`).
+
+---
+
+# Phase 6 — Manual smoke verification
+
+Boot kryton-desktop or web dev server. Walk through the 25 plugins per the table in Task 3.B Step 4 using Chrome DevTools MCP for browser-side verification (page snapshot, click, type, screenshot). Record pass/fail per row. Address any regressions before declaring shipped.
+
 Phase 1 may start the moment Phase 0 completes. Phase 2 requires Phase 0's `replaceFenceAtRange` helper + vim dep injection. Phase 3 runs after all implementer agents report green.
 
 **File ownership (no agent writes outside its column):**
