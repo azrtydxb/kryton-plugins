@@ -29,6 +29,20 @@
       "icon": "calendar"
     },
     {
+      "id": "calendar-journal",
+      "name": "Calendar Journal",
+      "description": "Enhanced journal view with monthly calendar and daily note management",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "journal",
+        "daily-notes",
+        "calendar"
+      ],
+      "icon": "book-open"
+    },
+    {
       "id": "checklist",
       "name": "Checklist",
       "description": "Aggregate and manage checklists across all your notes",
@@ -56,6 +70,34 @@
       "icon": "database"
     },
     {
+      "id": "excalidraw",
+      "name": "Excalidraw",
+      "description": "Render Excalidraw drawings embedded in notes via code fences",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "diagrams",
+        "visualization",
+        "drawing"
+      ],
+      "icon": "pen-tool"
+    },
+    {
+      "id": "flashcards",
+      "name": "Flashcards",
+      "description": "Extract Q&A pairs from notes and study them as flashcards",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "learning",
+        "study",
+        "productivity"
+      ],
+      "icon": "layers"
+    },
+    {
       "id": "git-backup",
       "name": "Git Backup",
       "description": "Automatic git backup with commit history and version control",
@@ -70,17 +112,28 @@
       "icon": "git-branch"
     },
     {
+      "id": "kanban",
+      "name": "Kanban Board",
+      "description": "Render kanban boards from code fences using a simple column/card format",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "productivity",
+        "tasks",
+        "visualization"
+      ],
+      "icon": "columns"
+    },
+    {
       "id": "mass-upload",
       "name": "Mass Upload",
       "description": "Bulk import .md files with validation and duplicate detection",
       "author": "Kryton",
       "version": "1.0.0",
       "minKrytonVersion": "3.0.0",
-      "tags": [
-        "import",
-        "productivity"
-      ],
-      "icon": "upload"
+      "tags": [],
+      "icon": "puzzle"
     },
     {
       "id": "mermaid-diagrams",
@@ -97,6 +150,20 @@
       "icon": "git-branch"
     },
     {
+      "id": "metrics",
+      "name": "Writing Metrics",
+      "description": "Writing statistics dashboard showing note counts, word totals, top tags, and daily trends",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "statistics",
+        "productivity",
+        "analytics"
+      ],
+      "icon": "bar-chart-2"
+    },
+    {
       "id": "mind-map",
       "name": "Mind Map",
       "description": "Display Markdown notes as interactive mind maps using Markmap",
@@ -108,6 +175,62 @@
         "diagrams"
       ],
       "icon": "brain"
+    },
+    {
+      "id": "pomodoro",
+      "name": "Pomodoro Timer",
+      "description": "Focus timer in the status bar with 25-minute work sessions and automatic breaks",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "productivity",
+        "focus",
+        "timer"
+      ],
+      "icon": "clock"
+    },
+    {
+      "id": "presentation",
+      "name": "Presentation Mode",
+      "description": "Render notes as full-screen slide decks, split by horizontal rules",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "presentations",
+        "slides",
+        "visualization"
+      ],
+      "icon": "monitor"
+    },
+    {
+      "id": "publish",
+      "name": "Publish",
+      "description": "Export notes as static HTML files for publishing or sharing",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "export",
+        "publishing",
+        "html"
+      ],
+      "icon": "globe"
+    },
+    {
+      "id": "reading-list",
+      "name": "Reading List",
+      "description": "Save URLs with notes and track your reading progress directly in the sidebar",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "productivity",
+        "bookmarks",
+        "web"
+      ],
+      "icon": "bookmark"
     },
     {
       "id": "recent-files",
@@ -123,6 +246,20 @@
       "icon": "clock"
     },
     {
+      "id": "rss-reader",
+      "name": "RSS Reader",
+      "description": "Subscribe to RSS feeds and clip articles as notes",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "rss",
+        "web",
+        "productivity"
+      ],
+      "icon": "rss"
+    },
+    {
       "id": "sample-wordcount",
       "name": "Word Count",
       "description": "Displays word count statistics for notes",
@@ -134,6 +271,20 @@
         "statistics"
       ],
       "icon": "hash"
+    },
+    {
+      "id": "slash-commands",
+      "name": "Slash Commands",
+      "description": "Type / at the start of a line to open a quick-insert menu for headings, formatting, tables, and more",
+      "author": "Kryton",
+      "version": "1.0.0",
+      "minKrytonVersion": "2.0.0",
+      "tags": [
+        "editor",
+        "productivity",
+        "markdown"
+      ],
+      "icon": "zap"
     },
     {
       "id": "tag-wrangler",
@@ -186,160 +337,6 @@
         "keybindings"
       ],
       "icon": "terminal"
-    },
-    {
-      "id": "slash-commands",
-      "name": "Slash Commands",
-      "description": "Type / at the start of a line to open a quick-insert menu for headings, formatting, tables, and more",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "editor",
-        "productivity",
-        "markdown"
-      ],
-      "icon": "zap"
-    },
-    {
-      "id": "pomodoro",
-      "name": "Pomodoro Timer",
-      "description": "Focus timer in the status bar with 25-minute work sessions and automatic breaks",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "productivity",
-        "focus",
-        "timer"
-      ],
-      "icon": "clock"
-    },
-    {
-      "id": "reading-list",
-      "name": "Reading List",
-      "description": "Save URLs with notes and track your reading progress directly in the sidebar",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "productivity",
-        "bookmarks",
-        "web"
-      ],
-      "icon": "bookmark"
-    },
-    {
-      "id": "metrics",
-      "name": "Writing Metrics",
-      "description": "Writing statistics dashboard showing note counts, word totals, top tags, and daily trends",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "statistics",
-        "productivity",
-        "analytics"
-      ],
-      "icon": "bar-chart-2"
-    },
-    {
-      "id": "excalidraw",
-      "name": "Excalidraw",
-      "description": "Render Excalidraw drawings embedded in notes via code fences",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "diagrams",
-        "visualization",
-        "drawing"
-      ],
-      "icon": "pen-tool"
-    },
-    {
-      "id": "kanban",
-      "name": "Kanban Board",
-      "description": "Render kanban boards from code fences using a simple column/card format",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "productivity",
-        "tasks",
-        "visualization"
-      ],
-      "icon": "columns"
-    },
-    {
-      "id": "publish",
-      "name": "Publish",
-      "description": "Export notes as static HTML files for publishing or sharing",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "export",
-        "publishing",
-        "html"
-      ],
-      "icon": "globe"
-    },
-    {
-      "id": "flashcards",
-      "name": "Flashcards",
-      "description": "Extract Q&A pairs from notes and study them as flashcards",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "learning",
-        "study",
-        "productivity"
-      ],
-      "icon": "layers"
-    },
-    {
-      "id": "presentation",
-      "name": "Presentation Mode",
-      "description": "Render notes as full-screen slide decks, split by horizontal rules",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "presentations",
-        "slides",
-        "visualization"
-      ],
-      "icon": "monitor"
-    },
-    {
-      "id": "calendar-journal",
-      "name": "Calendar Journal",
-      "description": "Enhanced journal view with monthly calendar and daily note management",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "journal",
-        "daily-notes",
-        "calendar"
-      ],
-      "icon": "book-open"
-    },
-    {
-      "id": "rss-reader",
-      "name": "RSS Reader",
-      "description": "Subscribe to RSS feeds and clip articles as notes",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "rss",
-        "web",
-        "productivity"
-      ],
-      "icon": "rss"
     }
   ]
 }
