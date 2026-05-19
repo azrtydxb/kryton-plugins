@@ -227,50 +227,138 @@ function GitHistoryPanel(api: ClientPluginAPI): () => any {
         ),
       ),
 
-      // Commit list
+      // Commit list — VSCode git-graph style: thin vertical line on the
+      // left with a dot at each commit. First 10 visible, rest reachable
+      // by scrolling within the panel (themed scrollbar via
+      // data-kryton-sidebar-scroll opt-in).
       loading
         ? h(
             'div',
-            { className: 'flex-1 flex items-center justify-center text-sm text-gray-400' },
+            { style: { padding: '8px 12px', color: 'var(--fg-4)', fontSize: 11.5, fontStyle: 'italic' } },
             'Loading…',
           )
         : commits.length === 0
         ? h(
             'div',
-            { className: 'flex-1 flex items-center justify-center text-sm text-gray-400 p-4 text-center' },
-            'No commits yet. Notes will be committed automatically based on your settings.',
+            { style: { padding: '6px 12px 10px', color: 'var(--fg-4)', fontSize: 11.5, fontStyle: 'italic' } },
+            'No commits yet. Auto-commit on save (see settings).',
           )
         : h(
             'ul',
-            { className: 'flex-1 overflow-y-auto py-1' },
-            commits.map((commit: GitCommit) =>
-              h(
+            {
+              // ~10 rows × 44px row height ≈ 440px. We cap there and let
+              // the rest scroll — keeps the panel a predictable size in
+              // the sidebar so it doesn't dominate.
+              'data-kryton-sidebar-scroll': '',
+              style: {
+                listStyle: 'none',
+                padding: 0,
+                margin: 0,
+                maxHeight: 440,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+              },
+            },
+            commits.map((commit: GitCommit, idx: number) => {
+              const isFirst = idx === 0;
+              const isLast = idx === commits.length - 1;
+              return h(
                 'li',
                 {
                   key: commit.hash,
-                  className: 'px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 border-b border-gray-100 dark:border-gray-800',
+                  style: {
+                    position: 'relative',
+                    padding: '8px 10px 8px 24px',
+                    cursor: 'default',
+                  },
+                  onMouseEnter: (e: any) => {
+                    e.currentTarget.style.background = 'var(--bg-hover, rgba(255,255,255,0.04))';
+                  },
+                  onMouseLeave: (e: any) => {
+                    e.currentTarget.style.background = 'transparent';
+                  },
                 },
+                // Vertical graph line — trimmed at the boundaries so it
+                // doesn't dangle past the first or last commit.
+                h('div', {
+                  style: {
+                    position: 'absolute',
+                    left: 11,
+                    top: isFirst ? 14 : 0,
+                    bottom: isLast ? 'auto' : 0,
+                    height: isLast ? 14 : undefined,
+                    width: 1,
+                    background: 'var(--line-strong, var(--line))',
+                  },
+                }),
+                // Commit dot — accent fill with a bg-colored border so it
+                // visually "cuts" the line, matching VSCode's git graph.
+                h('div', {
+                  style: {
+                    position: 'absolute',
+                    left: 7,
+                    top: 11,
+                    width: 9,
+                    height: 9,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    border: '2px solid var(--bg-1)',
+                    boxSizing: 'border-box',
+                  },
+                }),
+                // Hash + time row
                 h(
                   'div',
-                  { className: 'flex items-center justify-between gap-2' },
+                  {
+                    style: {
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 6,
+                    },
+                  },
                   h(
                     'span',
-                    { className: 'font-mono text-xs text-violet-500 dark:text-violet-400 shrink-0' },
-                    commit.hash,
+                    {
+                      style: {
+                        fontFamily: 'var(--font-mono, monospace)',
+                        fontSize: 11,
+                        color: 'var(--accent)',
+                        flexShrink: 0,
+                      },
+                    },
+                    commit.hash.slice(0, 7),
                   ),
                   h(
                     'span',
-                    { className: 'text-xs text-gray-400 dark:text-gray-500 shrink-0' },
+                    {
+                      style: {
+                        fontSize: 10.5,
+                        color: 'var(--fg-4)',
+                        flexShrink: 0,
+                      },
+                    },
                     formatRelativeTime(commit.date),
                   ),
                 ),
+                // Message — single-line truncated, full text in title
                 h(
-                  'p',
-                  { className: 'text-sm text-gray-700 dark:text-gray-300 mt-0.5 truncate', title: commit.message },
+                  'div',
+                  {
+                    title: commit.message,
+                    style: {
+                      fontSize: 12,
+                      color: 'var(--fg-1)',
+                      marginTop: 2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    },
+                  },
                   commit.message,
                 ),
-              ),
-            ),
+              );
+            }),
           ),
     );
   };
