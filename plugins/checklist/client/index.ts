@@ -77,8 +77,8 @@ export function activate(api: ClientPluginAPI): void {
       fetchChecklists();
     }, [fetchChecklists]);
 
-    const handleNavigate = useCallback((path: string) => {
-      api.api.fetch(`/notes/${encodeURIComponent(path)}`).catch(() => {});
+    const handleNavigate = useCallback(async (path: string) => {
+      await api.notes.openByPath(path);
     }, []);
 
     if (loading) {

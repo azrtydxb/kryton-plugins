@@ -44,9 +44,8 @@ function activate(api) {
     useEffect(() => {
       fetchChecklists();
     }, [fetchChecklists]);
-    const handleNavigate = useCallback((path) => {
-      api.api.fetch(`/notes/${encodeURIComponent(path)}`).catch(() => {
-      });
+    const handleNavigate = useCallback(async (path) => {
+      await api.notes.openByPath(path);
     }, []);
     if (loading) {
       return h(
