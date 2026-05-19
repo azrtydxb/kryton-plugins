@@ -1,65 +1,52 @@
-import type { ClientPluginAPI } from '../../../types/client';
+import type { ClientPluginAPI, EditorState, Transaction } from '../../../types/client';
 
 const { React } = window.__krytonPluginDeps;
-const { createElement: h } = React;
+const { createElement: h, useEffect, useRef } = React;
 
 // ---------------------------------------------------------------------------
-// Table formatting logic
+// Table formatting logic — mirror of plugins/advanced-tables/format.js
+// (source of truth, covered by __tests__/format.test.js). esbuild builds
+// this client standalone so we inline.
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a Markdown table block into rows of raw cell strings.
- * Returns null if the text doesn't look like a Markdown table.
- */
 function parseTable(text: string): string[][] | null {
   const lines = text.split('\n').filter((l) => l.trim().startsWith('|'));
   if (lines.length < 2) return null;
   return lines.map((line) => {
-    // Trim leading/trailing pipes then split on |
     const trimmed = line.trim().replace(/^\||\|$/g, '');
     return trimmed.split('|').map((cell) => cell.trim());
   });
 }
 
-/** Return true if a row is a separator row (e.g. | --- | :---: | ---: |) */
 function isSeparatorRow(row: string[]): boolean {
   return row.every((cell) => /^:?-+:?$/.test(cell.trim()) || cell.trim() === '');
 }
 
-/**
- * Format a parsed table so all columns are padded to equal widths.
- * The separator row dashes are padded to match the column width.
- */
 function formatTable(rows: string[][]): string {
   if (rows.length === 0) return '';
-
   const colCount = Math.max(...rows.map((r) => r.length));
-
-  // Ensure every row has the same number of columns
   const normalized = rows.map((row) => {
     const padded = [...row];
     while (padded.length < colCount) padded.push('');
     return padded;
   });
-
-  // Compute max width per column (ignore separator rows for width calculation)
-  const colWidths: number[] = Array(colCount).fill(3); // minimum 3 for "---"
+  const colWidths: number[] = Array(colCount).fill(3);
   for (const row of normalized) {
     if (isSeparatorRow(row)) continue;
     row.forEach((cell, i) => {
       if (cell.length > colWidths[i]) colWidths[i] = cell.length;
     });
   }
-
   return normalized
     .map((row) => {
       const cells = row.map((cell, i) => {
         if (isSeparatorRow(row)) {
-          // Preserve alignment markers
           const c = cell.trim();
           const leftColon = c.startsWith(':');
           const rightColon = c.endsWith(':');
-          const dashes = '-'.repeat(colWidths[i] - (leftColon ? 1 : 0) - (rightColon ? 1 : 0));
+          const dashes = '-'.repeat(
+            colWidths[i] - (leftColon ? 1 : 0) - (rightColon ? 1 : 0),
+          );
           return (leftColon ? ':' : '') + dashes + (rightColon ? ':' : '');
         }
         return cell.padEnd(colWidths[i]);
@@ -69,20 +56,17 @@ function formatTable(rows: string[][]): string {
     .join('\n');
 }
 
-/**
- * Given the full note content and cursor position, find the Markdown table
- * block the cursor is within (if any), format it, and return the updated
- * content along with the new cursor position offset.
- *
- * Returns null if the cursor is not inside a table.
- */
-function formatTableAtCursor(
-  content: string,
-  cursorPos: number,
-): { newContent: string; cursorOffset: number } | null {
+interface FormatResult {
+  newContent: string;
+  cursorOffset: number;
+  tableFrom: number;
+  tableTo: number;
+  formatted: string;
+}
+
+function formatTableAtCursor(content: string, cursorPos: number): FormatResult | null {
   const lines = content.split('\n');
 
-  // Find which line the cursor is on
   let charCount = 0;
   let cursorLine = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -90,50 +74,94 @@ function formatTableAtCursor(
       cursorLine = i;
       break;
     }
-    charCount += lines[i].length + 1; // +1 for the \n
+    charCount += lines[i].length + 1;
   }
-
   if (cursorLine === -1) cursorLine = lines.length - 1;
 
-  // Check that the cursor line is inside a table
-  if (!lines[cursorLine]?.trim().startsWith('|')) return null;
+  if (!lines[cursorLine] || !lines[cursorLine].trim().startsWith('|')) return null;
 
-  // Find the start and end of the table block
   let tableStart = cursorLine;
-  while (tableStart > 0 && lines[tableStart - 1]?.trim().startsWith('|')) {
-    tableStart--;
-  }
+  while (tableStart > 0 && lines[tableStart - 1].trim().startsWith('|')) tableStart--;
   let tableEnd = cursorLine;
-  while (tableEnd < lines.length - 1 && lines[tableEnd + 1]?.trim().startsWith('|')) {
-    tableEnd++;
-  }
+  while (tableEnd < lines.length - 1 && lines[tableEnd + 1].trim().startsWith('|')) tableEnd++;
 
   const tableLines = lines.slice(tableStart, tableEnd + 1);
-  const tableText = tableLines.join('\n');
-
-  const parsed = parseTable(tableText);
+  const parsed = parseTable(tableLines.join('\n'));
   if (!parsed) return null;
-
   const formatted = formatTable(parsed);
 
-  // Calculate character offset before the table block
   const beforeTable = lines.slice(0, tableStart).join('\n');
-  const beforeLen = tableStart === 0 ? 0 : beforeTable.length + 1;
+  const tableFrom = tableStart === 0 ? 0 : beforeTable.length + 1;
+  const oldTableText = tableLines.join('\n');
+  const tableTo = tableFrom + oldTableText.length;
 
   const newLines = [
     ...lines.slice(0, tableStart),
     ...formatted.split('\n'),
     ...lines.slice(tableEnd + 1),
   ];
-
   const newContent = newLines.join('\n');
 
-  // Adjust cursor: keep it at the same relative position within the table,
-  // clamped to the end of the formatted block.
-  const cursorInTable = cursorPos - beforeLen;
-  const newCursorPos = Math.min(beforeLen + cursorInTable, beforeLen + formatted.length);
+  const cursorInTable = cursorPos - tableFrom;
+  const newCursorPos = Math.min(tableFrom + cursorInTable, tableFrom + formatted.length);
 
-  return { newContent, cursorOffset: newCursorPos - cursorPos };
+  return {
+    newContent,
+    cursorOffset: newCursorPos - cursorPos,
+    tableFrom,
+    tableTo,
+    formatted,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Editor-state access — both the command and the toolbar button derive
+// (content, caret) from api.editor.getActiveState() when available, with
+// the captured useCurrentNote() content as a no-caret fallback.
+// ---------------------------------------------------------------------------
+
+function readEditor(api: ClientPluginAPI): { content: string; caret: number } | null {
+  const st: EditorState | null = api.editor.getActiveState();
+  if (!st || typeof st.doc !== 'string') return null;
+  const sel = st.selection;
+  const caret =
+    sel && typeof sel.head === 'number' ? sel.head : Math.floor((st.doc as string).length / 2);
+  return { content: st.doc as string, caret };
+}
+
+function runFormat(api: ClientPluginAPI, fallbackContent: string | null): void {
+  const fromEditor = readEditor(api);
+  const content = fromEditor?.content ?? fallbackContent;
+  const caret = fromEditor?.caret ?? 0;
+  if (content == null) {
+    api.notify.info('No note is currently open.');
+    return;
+  }
+
+  const result = formatTableAtCursor(content, caret);
+  if (!result) {
+    api.notify.info('No Markdown table found at cursor.');
+    return;
+  }
+
+  if (fromEditor) {
+    const newCaret = Math.max(0, caret + result.cursorOffset);
+    const tr: Transaction = {
+      ops: [
+        {
+          kind: 'replace',
+          from: result.tableFrom,
+          to: result.tableTo,
+          text: result.formatted,
+        },
+      ],
+      selection: { anchor: newCaret, head: newCaret },
+    };
+    api.editor.dispatch(tr);
+    api.notify.success('Table formatted.');
+  } else {
+    api.notify.info('Table formatting requires the editor to be focused.');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,72 +169,33 @@ function formatTableAtCursor(
 // ---------------------------------------------------------------------------
 
 export function activate(api: ClientPluginAPI): void {
-  // Command: Format Table — formats the Markdown table at the cursor position.
+  // Command — invoked from the command palette or by shortcut. Cannot
+  // call React hooks here, so we read editor state directly.
   api.commands.register({
     id: 'advanced-tables.format',
     name: 'Format Table',
     shortcut: 'Ctrl+Shift+T',
     execute() {
-      const note = api.context.useCurrentNote();
-      if (!note) {
-        api.notify.info('No note is currently open.');
-        return;
-      }
-
-      // Try to get the CodeMirror editor view for cursor position
-      const cmEl = document.querySelector('.cm-editor') as any;
-      const view = cmEl?.cmView?.view;
-      const cursorPos: number =
-        view?.state?.selection?.main?.head ?? note.content.length / 2;
-
-      const result = formatTableAtCursor(note.content, cursorPos);
-      if (!result) {
-        api.notify.info('No Markdown table found at cursor.');
-        return;
-      }
-
-      // Write back via the editor DOM — dispatch a CodeMirror transaction if possible
-      if (view) {
-        const { newContent } = result;
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: newContent },
-          selection: { anchor: Math.max(0, cursorPos + result.cursorOffset) },
-        });
-      } else {
-        // Fallback: notify — no direct DOM write path without the editor view
-        api.notify.info('Table formatting requires the editor to be focused.');
-      }
-
-      api.notify.success('Table formatted.');
+      runFormat(api, null);
     },
   });
 
-  // Toolbar button: "Format Table"
-  function FormatTableButton(): any {
+  // Toolbar button — useCurrentNote is invoked at the React-legal top
+  // level and stashed in a ref so the synchronous onClick handler can
+  // read it without re-invoking the hook. The editor state read inside
+  // runFormat() takes priority; the note is only the headless fallback.
+  function FormatTableButton(): unknown {
+    const note = api.context.useCurrentNote();
+    const noteRef = useRef<string | null>(null);
+    useEffect(() => {
+      noteRef.current = note ? note.content : null;
+    }, [note]);
+
     return h(
       'button',
       {
         onClick() {
-          const note = api.context.useCurrentNote();
-          if (!note) return;
-          const cmEl = document.querySelector('.cm-editor') as any;
-          const view = cmEl?.cmView?.view;
-          const cursorPos: number =
-            view?.state?.selection?.main?.head ?? note.content.length / 2;
-          const result = formatTableAtCursor(note.content, cursorPos);
-          if (!result) {
-            api.notify.info('No Markdown table found at cursor.');
-            return;
-          }
-          if (view) {
-            view.dispatch({
-              changes: { from: 0, to: view.state.doc.length, insert: result.newContent },
-              selection: { anchor: Math.max(0, cursorPos + result.cursorOffset) },
-            });
-            api.notify.success('Table formatted.');
-          } else {
-            api.notify.info('Table formatting requires the editor to be focused.');
-          }
+          runFormat(api, noteRef.current);
         },
         title: 'Format Table (Ctrl+Shift+T)',
         className:
@@ -217,7 +206,7 @@ export function activate(api: ClientPluginAPI): void {
     );
   }
 
-  api.ui.registerEditorToolbarButton(FormatTableButton, {
+  api.ui.registerEditorToolbarButton(FormatTableButton as never, {
     id: 'advanced-tables-format',
     order: 50,
   });
