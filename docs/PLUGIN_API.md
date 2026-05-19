@@ -222,17 +222,37 @@ Options typically include `id` (string) and `order` (number for positioning).
 
 ### `api.editor`
 
-Extend the CodeMirror editor.
+Extend the custom Kryton editor. The editor is **not** CodeMirror — it is a bespoke
+transactional editor implemented in `packages/ui/src/editor/state`. Plugins extend
+it by registering an `EditorPlugin` value, not by injecting CodeMirror extensions.
 
 | Method | Description |
 |--------|-------------|
-| `api.editor.registerExtension(extension)` | Add a CodeMirror 6 extension |
+| `api.editor.registerPlugin(plugin)` | Register an `EditorPlugin`. Returns an `unregister()` function. |
+| `api.editor.getActiveState()` | Snapshot of the focused editor's `EditorState`, or `null` if no editor is mounted. |
+| `api.editor.dispatch(tr)` | Dispatch a `Transaction` to the active editor. |
+| `api.editor.onTransaction(cb)` | Subscribe to every transaction applied to the active editor. Returns an unsubscribe fn. |
 
-```javascript
-// Example: add vim keybindings
-const { vim } = window.__krytonPluginDeps;
-api.editor.registerExtension(vim());
+#### `EditorPlugin` interface
+
+Defined in `packages/ui/src/editor/state/plugins.ts`:
+
+```ts
+interface EditorPlugin {
+  name: string;
+  decorations?(state: EditorState): DecorationSpec[];
+  commands?: Record<string, (state: EditorState) => Transaction>;
+  suggestions?(state: EditorState, trigger: SuggestionTrigger): Promise<Suggestion[]>;
+  onTransaction?(tr: Transaction, state: EditorState): Transaction | null;
+  onKeyDown?(e: KeyboardEvent, state: EditorState): Transaction | "prevent-default" | null;
+}
 ```
+
+- `decorations` — return inline decorations for the current state. Recomputed on every state change.
+- `commands` — named command functions usable from `api.commands.register` or directly via `api.editor.dispatch`.
+- `suggestions` — async source of completion items for `wikilink`, `tag`, or `slash` triggers.
+- `onTransaction` — observe (and optionally rewrite) transactions before they apply. Return `null` to leave the transaction untouched.
+- `onKeyDown` — native keydown hook. Runs **before** the editor's own keymap. Return a `Transaction` to apply and consume the event, `"prevent-default"` to swallow without dispatching, or `null` to pass through to the next plugin / native handling. The **first non-null result wins**; later plugins do not run.
 
 ### `api.markdown`
 
@@ -240,8 +260,36 @@ Extend markdown rendering.
 
 | Method | Description |
 |--------|-------------|
-| `api.markdown.registerPlugin(remarkPlugin)` | Add a remark plugin |
-| `api.markdown.registerRehypePlugin(rehypePlugin)` | Add a rehype plugin |
+| `api.markdown.registerCodeFenceRenderer(language, component)` | Render a custom React component for a fenced code block of the given language. |
+| `api.markdown.registerPostProcessor(fn)` | Transform rendered HTML before it is mounted. |
+
+#### Code-fence renderer props
+
+The component receives:
+
+```ts
+interface CodeFenceRendererProps {
+  /** The fence body, without the surrounding ``` lines. */
+  content: string;
+  /** Path of the host note. May be empty when no path is known. */
+  notePath: string;
+  /**
+   * Line range of the entire fence (including the opening + closing ``` lines)
+   * in the parsed note source. 0-based, inclusive of both endpoints.
+   * Undefined when source position data is not available.
+   */
+  range?: { startLine: number; endLine: number };
+  /** Full original fence block including the surrounding ``` markers. */
+  source?: string;
+}
+```
+
+> ⚠️ The `range` passed to renderers is **parsed-body-relative**, not raw-file
+> relative. To round-trip an edit, locate `source` inside the latest raw note
+> content (`api.notes.get` / `getContent`) by string match and then call
+> `api.notes.update` with the rewritten content. Only call
+> `api.notes.replaceFenceAtRange` when you already hold a **raw-file** line
+> range (see below).
 
 ### `api.commands`
 
@@ -277,6 +325,64 @@ Make authenticated API calls to the Kryton backend.
 |--------|-------------|
 | `api.api.fetch(path, options)` | Fetch from plugin's API endpoint (auto-prefixed) |
 
+### `api.notes` (client)
+
+Read and modify notes belonging to the **current user**. Unlike the server-side
+`api.notes`, the client variant takes no `userId` — operations are always
+scoped to the signed-in user.
+
+| Method | Description |
+|--------|-------------|
+| `api.notes.list(folder?)` | List notes (optionally under a folder). Returns `PluginNoteEntry[]`. |
+| `api.notes.get(path)` | Get a note with metadata: `{ path, content, title, modifiedAt }`. |
+| `api.notes.getContent(path)` | Get only the raw content string of a note. |
+| `api.notes.create(path, content)` | Create a new note. |
+| `api.notes.update(path, content)` | Overwrite a note's content. |
+| `api.notes.delete(path)` | Delete a note. |
+| `api.notes.openByPath(path)` | Open the note in the active editor pane. |
+| `api.notes.replaceFenceAtRange(path, range, newSource)` | Replace lines `[range.startLine .. range.endLine]` (0-based, inclusive) of the raw note file with `newSource`. **Expects raw-file line numbers.** |
+
+**`replaceFenceAtRange` example.** Inside a code-fence renderer the `range`
+you receive is parsed-body-relative, so the typical round-trip pattern is
+locate-by-source-string:
+
+```js
+async function persistFence(api, notePath, oldSource, newSource) {
+  const { content } = await api.notes.get(notePath);
+  if (!content.includes(oldSource)) return;
+  await api.notes.update(notePath, content.replace(oldSource, newSource));
+}
+```
+
+Use `replaceFenceAtRange` directly only when you already hold a verified
+raw-file line range (e.g. from a server-side indexer):
+
+```js
+await api.notes.replaceFenceAtRange(
+  "Journal/2026-05-19.md",
+  { startLine: 12, endLine: 24 },
+  "```kanban\n## Todo\n- [ ] new card\n```",
+);
+```
+
+### `api.storage` (client)
+
+Per-plugin scoped key-value storage. Values are persisted server-side and
+isolated per plugin id. Pass a `userId` to scope an entry to a specific user;
+omit it for plugin-global storage.
+
+| Method | Description |
+|--------|-------------|
+| `api.storage.get(key)` | Read a value. Resolves to `unknown` (caller validates). |
+| `api.storage.set(key, value)` | Write a JSON-serialisable value. |
+| `api.storage.delete(key)` | Remove a key. |
+| `api.storage.list(prefix?)` | List `{ key, value, userId }` entries, optionally filtered by key prefix. |
+
+```js
+await api.storage.set("last-sync", { at: Date.now() });
+const entry = await api.storage.get("last-sync");
+```
+
 ### `api.notify`
 
 Show toast notifications.
@@ -294,14 +400,18 @@ Show toast notifications.
 Client plugins can access shared dependencies via `window.__krytonPluginDeps` (typed in `types/client.d.ts`):
 
 ```typescript
-const { React, vim, getCM } = window.__krytonPluginDeps;
+const { React, ReactDOM } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect } = React;
 ```
 
 Available dependencies:
-- `React` - React library
-- `vim` - CodeMirror vim extension (`@replit/codemirror-vim`)
-- `getCM` - Helper to get the CodeMirror 5 compatibility layer from a CM6 EditorView
+- `React` — the React library used by the host (use this — do not bundle your own copy)
+- `ReactDOM` — paired ReactDOM, for plugins that mount their own portals
+
+> ℹ️ Kryton's editor is **not** CodeMirror. Earlier docs referenced `vim` and
+> `getCM` exports here; those were never wired and have been removed. Plugins
+> that want to extend the editor should use `api.editor.registerPlugin` with an
+> `EditorPlugin` instead (see [`api.editor`](#apieditor)).
 
 ---
 

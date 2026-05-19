@@ -8,8 +8,31 @@ Official plugin registry for [Kryton](https://github.com/azrtydxb/kryton), a sel
 
 | Plugin | Description |
 |--------|-------------|
-| **vim-mode** | Adds Vim keybindings to the editor with toggle, mode indicator, and command bar |
-| **sample-wordcount** | Displays word count statistics for notes via a custom API endpoint |
+| **advanced-tables** | Improved table navigation, formatting, and manipulation for Markdown tables |
+| **calendar** | Monthly calendar widget for navigating and creating daily notes |
+| **calendar-journal** | Enhanced journal view with monthly calendar and daily note management |
+| **checklist** | Aggregate and manage checklists across all your notes |
+| **dataview** | Query and display data from your notes using SQL-like syntax |
+| **excalidraw** | Render Excalidraw drawings embedded in notes via code fences |
+| **flashcards** | Extract Q&A pairs from notes and study them as flashcards |
+| **git-backup** | Automatic git backup with commit history and version control |
+| **kanban** | Render kanban boards from code fences using a simple column/card format |
+| **mass-upload** | Bulk import .md files with validation and duplicate detection |
+| **mermaid-diagrams** | Render Mermaid diagrams in code fences with live preview and theme support |
+| **metrics** | Writing statistics dashboard showing note counts, word totals, top tags, and daily trends |
+| **mind-map** | Display Markdown notes as interactive mind maps using Markmap |
+| **pomodoro** | Focus timer in the status bar with 25-minute work sessions and automatic breaks |
+| **presentation** | Render notes as full-screen slide decks, split by horizontal rules |
+| **publish** | Export notes as static HTML files for publishing or sharing |
+| **reading-list** | Save URLs with notes and track your reading progress directly in the sidebar |
+| **recent-files** | Display recently opened files for quick navigation |
+| **rss-reader** | Subscribe to RSS feeds and clip articles as notes |
+| **sample-wordcount** | Displays word count statistics for notes |
+| **slash-commands** | Type `/` at the start of a line to open a quick-insert menu for headings, formatting, tables, and more |
+| **tag-wrangler** | Rename, merge, and manage tags across all your notes |
+| **templater** | Advanced template system with dynamic variables and date formatting |
+| **theme-settings** | Customize colors, fonts, and layout of Kryton's interface |
+| **vim-mode** | Adds Vim keybindings to the editor with visual mode indicator and command bar |
 
 ## Installing Plugins
 

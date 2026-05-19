@@ -91,6 +91,24 @@ Fix any linting issues automatically:
 npm run lint:fix
 ```
 
+## Testing
+
+Plugins use [Vitest](https://vitest.dev) for unit tests. Place tests under
+`plugins/<name>/__tests__/*.test.js` (or `.test.ts` if you prefer to write
+tests in TypeScript — they will be picked up by the same runner).
+
+```bash
+npm test              # syntax checks + vitest
+npm run test:unit     # vitest only
+npm run test:watch    # vitest watch mode
+```
+
+Aim for **≥80% line coverage** on pure modules (parsers, validators,
+serializers, scheduling logic). Pure modules should not import from
+`window.__krytonPluginDeps` or the plugin API — keep side-effecting code
+in `client/index.ts` or `server/index.ts` and unit-test the pure pieces
+in isolation.
+
 ## Code Style
 
 - **All plugins**: TypeScript with proper type annotations
