@@ -324,19 +324,6 @@
         "customization"
       ],
       "icon": "palette"
-    },
-    {
-      "id": "vim-mode",
-      "name": "Vim Mode",
-      "description": "Adds Vim keybindings to the editor with visual mode indicator and command bar",
-      "author": "Kryton",
-      "version": "1.0.0",
-      "minKrytonVersion": "2.0.0",
-      "tags": [
-        "editor",
-        "keybindings"
-      ],
-      "icon": "terminal"
     }
   ]
 }
