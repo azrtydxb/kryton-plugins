@@ -1,7 +1,9 @@
 export default [
   {
     files: ["plugins/**/*.js"],
-    ignores: ["plugins/**/*.ts"],
+    // Ignore .ts sources (linted via tsc) and esbuild-generated CJS server bundles
+    // whose __toESM / __copyProps helpers emit `mod != null` checks we can't edit.
+    ignores: ["plugins/**/*.ts", "plugins/*/server/index.js"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
