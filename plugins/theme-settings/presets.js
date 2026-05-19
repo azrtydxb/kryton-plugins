@@ -61,7 +61,7 @@ function buildStyles(opts) {
 :root[data-theme="dark"] { color-scheme: dark; }
 :root[data-theme="light"] { color-scheme: light; }
 body { font-size: ${fontSize}px; }
-body, .cm-editor, .cm-editor .cm-content, .markdown-preview { font-family: ${fontFamily}; line-height: ${lineHeight}; }
+body, [data-editor-root], .markdown-preview { font-family: ${fontFamily}; line-height: ${lineHeight}; }
 .markdown-preview { max-width: ${contentMaxWidth}px; }
 a, .text-violet-500, .text-purple-500 { color: var(--accent-color); }
 button.bg-violet-500, button.bg-purple-500 { background-color: var(--accent-color) !important; }

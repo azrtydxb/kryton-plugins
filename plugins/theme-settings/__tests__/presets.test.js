@@ -26,6 +26,12 @@ describe('presets', () => {
     expect(css).toContain('Inter, sans-serif');
     expect(css).toContain('16px');
   });
+  it('buildStyles targets the Kryton editor root, not CodeMirror', () => {
+    const css = buildStyles(PRESETS.default);
+    expect(css).toContain('[data-editor-root]');
+    expect(css).not.toContain('.cm-editor');
+    expect(css).not.toContain('.cm-content');
+  });
   it('resolveMode passes through light/dark', () => {
     expect(resolveMode('dark')).toBe('dark');
     expect(resolveMode('light')).toBe('light');
