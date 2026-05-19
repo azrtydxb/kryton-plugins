@@ -14,10 +14,21 @@ export interface CodeFenceRendererProps {
   notePath: string;
   /**
    * Range of the entire fence (including opening + closing ``` lines)
-   * in the parsed note source. Undefined when source position data is
-   * not available.
+   * in the PARSED note source (after frontmatter stripping and
+   * wikilink-embed substitution). Undefined when source position data
+   * is not available.
+   *
+   * Prefer `rawRange` for round-tripping to disk.
    */
   range?: CodeFenceRange;
+  /**
+   * Range of the entire fence in the RAW on-disk content — the same
+   * coordinate space as the string returned by
+   * `api.notes.get(path).content`. Suitable for use with
+   * `api.notes.replaceFenceAtRange` without further adjustment.
+   * Undefined when the fence can't be located in the raw source.
+   */
+  rawRange?: CodeFenceRange;
   /**
    * Full original fence block including the surrounding ``` markers.
    * Undefined when source position data is not available.
@@ -88,6 +99,11 @@ export interface ClientPluginAPI {
     registerSettingsSection(component: any, options: { id: string; title: string }): void;
     registerPage(component: any, options: { id: string; path: string; title: string; icon: string; showInSidebar?: boolean }): void;
     registerNoteAction(options: { id: string; label: string; icon: string; onClick: (notePath: string) => void }): void;
+    /**
+     * Close the currently focused note pane (Cmd+W intent). No-op when
+     * no pane is open or the host has not registered a closePane hook.
+     */
+    closePane(): void;
   };
   markdown: {
     registerCodeFenceRenderer(language: string, component: any): void;
@@ -118,6 +134,13 @@ export interface ClientPluginAPI {
       range: CodeFenceRange,
       newSource: string,
     ): Promise<{ ok: true }>;
+    /**
+     * Persist the currently focused editor buffer via the host save
+     * pipeline. Resolves with the saved path + ISO timestamp; rejects
+     * when no editor is focused or the host has not registered a
+     * saveCurrent hook.
+     */
+    saveCurrent(): Promise<{ path: string; savedAt: string }>;
   };
   storage: {
     get(key: string): Promise<unknown>;
@@ -132,6 +155,13 @@ export interface ClientPluginAPI {
     getActiveState(): EditorState | null;
     dispatch(tr: Transaction): void;
     onTransaction(cb: (tr: Transaction, state: EditorState) => void): () => void;
+    /**
+     * Set a host-level editor option. Known keys today:
+     *   - "lineNumbers" (boolean, default false) — toggles the gutter
+     *     rendered by EditorView. vim-mode's `:set number` maps to this.
+     * Unknown keys are accepted (forward compatibility).
+     */
+    setOption(name: string, value: boolean | number | string): void;
   };
   notify: {
     info(message: string): void;
