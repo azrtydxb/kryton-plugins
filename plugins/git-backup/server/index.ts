@@ -3,27 +3,36 @@ import type { PluginAPI } from '../../../types/server';
 // Declare require for Node built-ins — no @types/node in this project
 declare function require(module: string): any;
 
-type ExecFn = (
+type ExecFileFn = (
   cmd: string,
-  opts: { cwd: string },
+  args: string[],
+  opts: { cwd: string; timeout?: number },
   cb: (err: Error | null, stdout: string, stderr: string) => void,
 ) => void;
 
-const { exec } = require('child_process') as { exec: ExecFn };
+const { execFile } = require('child_process') as { execFile: ExecFileFn };
 const pathMod = require('path') as { resolve: (...parts: string[]) => string };
+const { buildCommitArgs, validateCwd } = require('../safe-args.js') as {
+  buildCommitArgs(opts: { message: string; allFiles?: boolean }): string[];
+  validateCwd(cwd: string, dataDir: string): string;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Run a shell command in the given directory, returning stdout. */
-function runGit(args: string, cwd: string): Promise<string> {
+/** Promise wrapper around execFile that resolves to trimmed stdout. */
+function pExecFile(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; timeout?: number },
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    exec(`git ${args}`, { cwd }, (err: Error | null, stdout: string, stderr: string) => {
+    execFile(cmd, args, opts, (err: Error | null, stdout: string, stderr: string) => {
       if (err) {
-        reject(new Error(stderr.trim() || err.message));
+        reject(new Error((stderr || '').trim() || err.message));
       } else {
-        resolve(stdout.trim());
+        resolve((stdout || '').trim());
       }
     });
   });
@@ -41,6 +50,40 @@ function resolveNotesDir(dataDir: string): string {
 /** Replace {{date}} in a commit message template with the current ISO timestamp. */
 function renderCommitMessage(template: string): string {
   return template.replace('{{date}}', new Date().toISOString());
+}
+
+// Per-instance git wrappers — bound to a notesRoot for validateCwd
+function makeGit(notesRoot: string) {
+  function ensure(cwd: string): string {
+    return validateCwd(cwd, notesRoot);
+  }
+  return {
+    add: (cwd: string) =>
+      pExecFile('git', ['add', '-A'], { cwd: ensure(cwd), timeout: 30_000 }),
+    commit: (cwd: string, message: string) => {
+      const args = buildCommitArgs({ message, allFiles: false });
+      return pExecFile('git', args, { cwd: ensure(cwd), timeout: 30_000 });
+    },
+    status: (cwd: string) =>
+      pExecFile('git', ['status', '--porcelain'], { cwd: ensure(cwd), timeout: 10_000 }),
+    log: (cwd: string, limit = 20) => {
+      const max = Math.min(Math.max(1, parseInt(String(limit), 10) || 20), 200);
+      return pExecFile(
+        'git',
+        ['log', `--max-count=${max}`, '--pretty=format:%H|%aI|%s'],
+        { cwd: ensure(cwd), timeout: 10_000 },
+      );
+    },
+    revParseShort: (cwd: string) =>
+      pExecFile('git', ['rev-parse', '--short', 'HEAD'], { cwd: ensure(cwd), timeout: 10_000 }),
+    lastLog: (cwd: string) =>
+      pExecFile('git', ['log', '-1', '--format=%H %ci'], { cwd: ensure(cwd), timeout: 10_000 }),
+    lastDate: (cwd: string) =>
+      pExecFile('git', ['log', '-1', '--format=%ci'], { cwd: ensure(cwd), timeout: 10_000 }),
+    push: (cwd: string) =>
+      pExecFile('git', ['push'], { cwd: ensure(cwd), timeout: 60_000 }),
+    version: () => pExecFile('git', ['--version'], { cwd: notesRoot, timeout: 5_000 }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -65,17 +108,22 @@ const state: BackupState = {
 // Core backup function
 // ---------------------------------------------------------------------------
 
-async function performCommit(notesDir: string, message: string, api: PluginAPI): Promise<void> {
+async function performCommit(
+  git: ReturnType<typeof makeGit>,
+  notesDir: string,
+  message: string,
+  api: PluginAPI,
+): Promise<void> {
   try {
-    await runGit('add -A', notesDir);
-    const statusOut = await runGit('status --porcelain', notesDir);
+    await git.add(notesDir);
+    const statusOut = await git.status(notesDir);
     if (!statusOut) {
       api.log.info('git-backup: nothing to commit');
       return;
     }
-    await runGit(`commit -m "${message.replace(/"/g, '\\"')}"`, notesDir);
+    await git.commit(notesDir, message);
     state.lastCommitTime = new Date();
-    const hash = await runGit('rev-parse --short HEAD', notesDir);
+    const hash = await git.revParseShort(notesDir);
     state.lastCommitHash = hash;
     api.log.info(`git-backup: committed ${hash} — ${message}`);
     state.pendingCommit = false;
@@ -89,10 +137,19 @@ async function performCommit(notesDir: string, message: string, api: PluginAPI):
 // Plugin lifecycle
 // ---------------------------------------------------------------------------
 
-export function activate(api: PluginAPI): void {
+export async function activate(api: PluginAPI): Promise<void> {
   api.log.info('Git Backup plugin activated');
 
   const notesDir = resolveNotesDir(api.plugin.dataDir);
+  const git = makeGit(notesDir);
+
+  // Ensure git binary is available; otherwise disable cleanly.
+  try {
+    await git.version();
+  } catch {
+    api.log.error('[git-backup] git binary not found; plugin disabled');
+    return;
+  }
 
   // Mark a commit as pending on every save
   api.events.on('note:afterSave', () => {
@@ -100,7 +157,8 @@ export function activate(api: PluginAPI): void {
   });
 
   // Populate last commit info on startup (best-effort)
-  runGit('log -1 --format=%H %ci', notesDir)
+  git
+    .lastLog(notesDir)
     .then((out) => {
       if (out) {
         const spaceIdx = out.indexOf(' ');
@@ -124,7 +182,7 @@ export function activate(api: PluginAPI): void {
     const template =
       typeof rawTemplate === 'string' ? rawTemplate : 'auto-backup: {{date}}';
 
-    await performCommit(notesDir, renderCommitMessage(template), api);
+    await performCommit(git, notesDir, renderCommitMessage(template), api);
   }
 
   state.intervalHandle = setInterval(() => {
@@ -141,10 +199,10 @@ export function activate(api: PluginAPI): void {
   // GET /status
   api.routes.register('get', '/status', async (_req: unknown, res: any) => {
     try {
-      const statusOut = await runGit('status --porcelain', notesDir);
+      const statusOut = await git.status(notesDir);
       let lastCommitDate: string | null = null;
       try {
-        lastCommitDate = await runGit('log -1 --format=%ci', notesDir);
+        lastCommitDate = await git.lastDate(notesDir);
       } catch {
         // no commits yet
       }
@@ -160,22 +218,17 @@ export function activate(api: PluginAPI): void {
     }
   });
 
-  // GET /log — last 20 commits
+  // GET /log — last 20 commits (pipe-separated, parsed here)
   api.routes.register('get', '/log', async (_req: unknown, res: any) => {
     try {
-      const logOut = await runGit(
-        'log -20 --format={"hash":"%h","message":"%s","date":"%ci"}',
-        notesDir,
-      );
+      const logOut = await git.log(notesDir, 20);
       const entries = logOut
         .split('\n')
         .filter(Boolean)
         .map((line: string) => {
-          try {
-            return JSON.parse(line) as unknown;
-          } catch {
-            return null;
-          }
+          const [hash, date, ...rest] = line.split('|');
+          if (!hash) return null;
+          return { hash, date: date ?? '', message: rest.join('|') };
         })
         .filter(Boolean);
       res.json({ commits: entries });
@@ -191,7 +244,7 @@ export function activate(api: PluginAPI): void {
         ? String(req.body.message)
         : renderCommitMessage('manual backup: {{date}}');
     try {
-      await performCommit(notesDir, customMessage, api);
+      await performCommit(git, notesDir, customMessage, api);
       res.json({ success: true, hash: state.lastCommitHash, message: customMessage });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -202,7 +255,7 @@ export function activate(api: PluginAPI): void {
   // POST /push — git push
   api.routes.register('post', '/push', async (_req: unknown, res: any) => {
     try {
-      const out = await runGit('push', notesDir);
+      const out = await git.push(notesDir);
       res.json({ success: true, output: out });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
