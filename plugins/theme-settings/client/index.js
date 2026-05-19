@@ -147,7 +147,31 @@ function activate(api) {
         contentMaxWidth: Number(localContentWidth) || 768,
         mode: localMode
       });
-      api.notify.success("Preview applied. Save your settings to persist.");
+      api.notify.success("Preview applied. Click Save to persist.");
+    }
+    async function handleSave() {
+      try {
+        await Promise.all([
+          api.context.setPluginSetting("preset", localPreset),
+          api.context.setPluginSetting("mode", localMode),
+          api.context.setPluginSetting("accentColor", localAccent),
+          api.context.setPluginSetting("fontSize", Number(localFontSize) || 14),
+          api.context.setPluginSetting("editorFont", localEditorFont),
+          api.context.setPluginSetting("lineHeight", localLineHeight),
+          api.context.setPluginSetting("contentWidth", Number(localContentWidth) || 768)
+        ]);
+        applyTheme({
+          accent: localAccent,
+          fontFamily: localEditorFont,
+          fontSize: Number(localFontSize) || 14,
+          lineHeight: localLineHeight,
+          contentMaxWidth: Number(localContentWidth) || 768,
+          mode: localMode
+        });
+        api.notify.success("Theme settings saved.");
+      } catch (err) {
+        api.notify.error("Failed to save settings: " + err.message);
+      }
     }
     const rowClass = "flex flex-col gap-1 mb-4";
     const labelClass = "text-sm font-medium text-gray-700 dark:text-gray-300";
@@ -274,10 +298,18 @@ function activate(api) {
           className: inputClass
         })
       ),
-      h("button", {
-        onClick: handlePreview,
-        className: "mt-2 px-4 py-2 text-sm rounded bg-violet-500 hover:bg-violet-600 text-white font-medium transition-colors"
-      }, "Preview")
+      h(
+        "div",
+        { className: "mt-2 flex gap-2" },
+        h("button", {
+          onClick: handlePreview,
+          className: "px-4 py-2 text-sm rounded border border-violet-500 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 font-medium transition-colors"
+        }, "Preview"),
+        h("button", {
+          onClick: handleSave,
+          className: "px-4 py-2 text-sm rounded bg-violet-500 hover:bg-violet-600 text-white font-medium transition-colors"
+        }, "Save")
+      )
     );
   }
   api.ui.registerSettingsSection(ThemeSettingsSection, {
