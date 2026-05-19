@@ -49,6 +49,7 @@ export default [
         DragEvent: "readonly",
         MouseEvent: "readonly",
         KeyboardEvent: "readonly",
+        CustomEvent: "readonly",
         FileReader: "readonly",
         File: "readonly",
         FileList: "readonly",
