@@ -141,47 +141,73 @@ function createMetricsPanel(api: ClientPluginAPI): () => any {
       fetchStats(true);
     }
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'WRITING METRICS'),
+    );
+
     // --- Loading state ---
     if (loading) {
       return h('div', {
-        style: {
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          fontSize: '12px',
-          color: 'var(--color-muted, #888)',
-        },
-      }, 'Computing stats\u2026');
+        style: { display: 'flex', flexDirection: 'column', height: '100%' },
+      },
+        sectionHeader,
+        h('div', {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            fontSize: '12px',
+            color: 'var(--color-muted, #888)',
+          },
+        }, 'Computing stats\u2026'),
+      );
     }
 
     // --- Error state ---
     if (error || !stats) {
       return h('div', {
-        style: {
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          gap: '8px',
-          fontSize: '12px',
-          color: 'var(--color-muted, #888)',
-        },
+        style: { display: 'flex', flexDirection: 'column', height: '100%' },
       },
-        h('span', null, error ?? 'No data'),
-        h('button', {
-          onClick: handleRefresh,
+        sectionHeader,
+        h('div', {
           style: {
-            padding: '4px 12px',
-            borderRadius: '4px',
-            border: '1px solid var(--color-border, #3f3f5a)',
-            background: 'transparent',
-            color: '#a78bfa',
-            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 1,
+            gap: '8px',
             fontSize: '12px',
+            color: 'var(--color-muted, #888)',
           },
-        }, 'Try again')
+        },
+          h('span', null, error ?? 'No data'),
+          h('button', {
+            onClick: handleRefresh,
+            style: {
+              padding: '4px 12px',
+              borderRadius: '4px',
+              border: '1px solid var(--color-border, #3f3f5a)',
+              background: 'transparent',
+              color: '#a78bfa',
+              cursor: 'pointer',
+              fontSize: '12px',
+            },
+          }, 'Try again')
+        ),
       );
     }
 
@@ -198,6 +224,7 @@ function createMetricsPanel(api: ClientPluginAPI): () => any {
         overflowY: 'auto',
       },
     },
+      sectionHeader,
       // Header row with refresh button
       h('div', {
         style: {

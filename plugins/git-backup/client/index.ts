@@ -100,6 +100,7 @@ function GitHistoryPanel(api: ClientPluginAPI): () => any {
     const [commits, setCommits] = useState<GitCommit[]>([]);
     const [loading, setLoading] = useState(true);
     const [pushing, setPushing] = useState(false);
+    const [status, setStatus] = useState<GitStatus | null>(null);
 
     const loadLog = useCallback(() => {
       setLoading(true);
@@ -115,9 +116,39 @@ function GitHistoryPanel(api: ClientPluginAPI): () => any {
         });
     }, []);
 
+    const loadStatus = useCallback(() => {
+      api.api
+        .fetch('/status')
+        .then((r) => r.json())
+        .then((data: GitStatus) => setStatus(data))
+        .catch(() => setStatus(null));
+    }, []);
+
     useEffect(() => {
       loadLog();
-    }, [loadLog]);
+      loadStatus();
+    }, [loadLog, loadStatus]);
+
+    const statusText = status === null
+      ? '—'
+      : status.dirty ? 'unsaved' : 'clean';
+
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'GIT BACKUP'),
+      h('span', { style: { color: 'var(--fg-4)' } }, statusText),
+    );
 
     function handleCommitNow(): void {
       api.api
@@ -156,6 +187,8 @@ function GitHistoryPanel(api: ClientPluginAPI): () => any {
     return h(
       'div',
       { className: 'flex flex-col h-full' },
+
+      sectionHeader,
 
       // Toolbar
       h(

@@ -168,7 +168,26 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
       color: 'var(--color-muted, #888)', textTransform: 'uppercase', letterSpacing: '0.05em',
     };
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'RSS'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(feeds.length)),
+    );
+
     return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' } },
+
+      sectionHeader,
 
       // Add feed input
       h('div', { style: { padding: '8px 10px', borderBottom: '1px solid var(--color-border, #3f3f5a)', display: 'flex', gap: '6px' } },

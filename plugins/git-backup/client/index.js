@@ -48,6 +48,7 @@ function GitHistoryPanel(api) {
     const [commits, setCommits] = useState([]);
     const [loading, setLoading] = useState(true);
     const [pushing, setPushing] = useState(false);
+    const [status, setStatus] = useState(null);
     const loadLog = useCallback(() => {
       setLoading(true);
       api.api.fetch("/log").then((r) => r.json()).then((data) => {
@@ -57,9 +58,32 @@ function GitHistoryPanel(api) {
         setLoading(false);
       });
     }, []);
+    const loadStatus = useCallback(() => {
+      api.api.fetch("/status").then((r) => r.json()).then((data) => setStatus(data)).catch(() => setStatus(null));
+    }, []);
     useEffect(() => {
       loadLog();
-    }, [loadLog]);
+      loadStatus();
+    }, [loadLog, loadStatus]);
+    const statusText = status === null ? "\u2014" : status.dirty ? "unsaved" : "clean";
+    const sectionHeader = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "4px 12px",
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: 10.5,
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+          color: "var(--fg-3)"
+        }
+      },
+      h("span", null, "GIT BACKUP"),
+      h("span", { style: { color: "var(--fg-4)" } }, statusText)
+    );
     function handleCommitNow() {
       api.api.fetch("/commit", { method: "POST", headers: { "Content-Type": "application/json" } }).then((r) => r.json()).then((data) => {
         if (data.success) {
@@ -87,6 +111,7 @@ function GitHistoryPanel(api) {
     return h(
       "div",
       { className: "flex flex-col h-full" },
+      sectionHeader,
       // Toolbar
       h(
         "div",

@@ -309,17 +309,40 @@ function activate(api) {
         );
       }
     }
+    const sectionHeader = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "4px 12px",
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: 10.5,
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+          color: "var(--fg-3)"
+        }
+      },
+      h("span", null, "TEMPLATES"),
+      h("span", { style: { color: "var(--fg-4)" } }, String(templates.length))
+    );
     if (loading) {
       return h(
         "div",
-        { className: "flex items-center justify-center h-full p-4" },
+        { className: "flex flex-col h-full" },
+        sectionHeader,
         h(
           "div",
-          { className: "flex items-center gap-2 text-sm text-gray-400" },
-          h("div", {
-            className: "w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"
-          }),
-          "Loading templates..."
+          { className: "flex-1 flex items-center justify-center p-4" },
+          h(
+            "div",
+            { className: "flex items-center gap-2 text-sm text-gray-400" },
+            h("div", {
+              className: "w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"
+            }),
+            "Loading templates..."
+          )
         )
       );
     }
@@ -327,6 +350,7 @@ function activate(api) {
       return h(
         "div",
         { className: "flex flex-col h-full" },
+        sectionHeader,
         h(
           "div",
           { className: "flex-1 flex flex-col items-center justify-center p-4 text-center" },
@@ -346,6 +370,7 @@ function activate(api) {
     return h(
       "div",
       { className: "flex flex-col h-full" },
+      sectionHeader,
       h(
         "ul",
         { className: "flex-1 overflow-y-auto py-1" },

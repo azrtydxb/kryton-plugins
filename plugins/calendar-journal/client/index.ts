@@ -142,7 +142,26 @@ function createJournalPanel(api: ClientPluginAPI): () => any {
       },
     };
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'JOURNAL'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(entries.length)),
+    );
+
     return h('div', { style: s.container },
+
+      sectionHeader,
 
       // Header: month nav + new entry button
       h('div', { style: s.header },

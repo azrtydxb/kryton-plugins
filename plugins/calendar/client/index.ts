@@ -82,7 +82,28 @@ export function activate(api: ClientPluginAPI): void {
 
     const grid = buildGrid(year, month);
 
-    return h('div', { className: 'flex flex-col p-2 select-none' },
+    // Uniform section header — matches the host sidebar sections
+    // ("FAVORITES", "FILES", "TAGS") and other plugin panels.
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'CALENDAR'),
+      h('span', { style: { color: 'var(--fg-4)' } }, `${MONTH_NAMES[month]} ${year}`),
+    );
+
+    return h('div', { className: 'flex flex-col select-none' },
+      sectionHeader,
+      h('div', { className: 'flex flex-col p-2' },
       // Header row: prev / title / next
       h('div', { className: 'flex items-center justify-between mb-2 px-1' },
         h('button', {
@@ -146,6 +167,7 @@ export function activate(api: ClientPluginAPI): void {
           onClick: goToday,
           className: 'text-xs text-gray-400 dark:text-gray-500 hover:text-violet-500 dark:hover:text-violet-400 transition-colors',
         }, 'Today')
+      )
       )
     );
   }

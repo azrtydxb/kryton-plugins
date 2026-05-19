@@ -119,7 +119,26 @@ function createReadingListPanel(api: ClientPluginAPI): () => any {
       fontWeight: active ? '600' : '400',
     });
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'READING LIST'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(items.length)),
+    );
+
     return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+
+      sectionHeader,
 
       // Add URL section
       h('div', {
