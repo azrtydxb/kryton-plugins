@@ -144,6 +144,21 @@ function motionRange(doc, pos, motion, count) {
   if (target >= pos) return { from: pos, to: target, lineWise: false };
   return { from: target, to: pos, lineWise: false };
 }
+function runEx(cmdStr) {
+  let s = (cmdStr || "").trim();
+  if (s.startsWith(":")) s = s.slice(1).trim();
+  if (!s) return { kind: "noop" };
+  if (s === "w" || s === "write") return { kind: "save" };
+  if (s === "q" || s === "quit") return { kind: "close" };
+  if (s === "wq" || s === "x" || s === "wq!") return { kind: "save-and-close" };
+  if (s === "set number" || s === "set nu") {
+    return { kind: "set-option", option: "lineNumbers", value: true };
+  }
+  if (s === "set nonumber" || s === "set nonu") {
+    return { kind: "set-option", option: "lineNumbers", value: false };
+  }
+  return { kind: "unknown", cmd: s };
+}
 function parseCount(buf) {
   let i = 0;
   while (i < buf.length && buf.charCodeAt(i) >= 48 && buf.charCodeAt(i) <= 57) {
@@ -357,7 +372,10 @@ function activate(api) {
       const stored = await api.storage.get("enabled");
       if (stored === false) enabled = false;
       const ln = await api.storage.get("lineNumbers");
-      if (ln === true) lineNumbers = true;
+      if (ln === true) {
+        lineNumbers = true;
+        api.editor.setOption("lineNumbers", true);
+      }
     } catch {
     }
   })();
@@ -456,7 +474,11 @@ function activate(api) {
         openSearchPrompt(api);
         return "prevent-default";
       case "ex-open":
-        openExPrompt(api);
+        openExPrompt(api, (v) => {
+          lineNumbers = v;
+          api.storage.set("lineNumbers", v).catch(() => {
+          });
+        });
         return "prevent-default";
       case "search": {
         lastSearch = result.text;
@@ -549,50 +571,60 @@ function activate(api) {
       lineNumbers = !lineNumbers;
       api.storage.set("lineNumbers", lineNumbers).catch(() => {
       });
-      applyLineNumberDecoration();
+      api.editor.setOption("lineNumbers", lineNumbers);
       api.notify.info(`Line numbers ${lineNumbers ? "on" : "off"}`);
     }
   });
-  function applyLineNumberDecoration() {
-    try {
-      const root = document.querySelector("[data-kryton-editor-root], .kryton-editor, .editor-root");
-      if (!root) return;
-      if (lineNumbers) root.classList.add("vim-line-numbers");
-      else root.classList.remove("vim-line-numbers");
-    } catch {
-    }
-  }
 }
-function openExPrompt(api) {
-  promptOverlay(":", async (cmd) => {
-    cmd = cmd.trim();
-    if (!cmd) return;
-    if (cmd === "w" || cmd === "wq") {
-      try {
-        const note = api.context.useCurrentNote ? null : null;
-        void note;
-        const tgt = document.activeElement || document.body;
-        tgt.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "s",
-          code: "KeyS",
-          ctrlKey: !navigator.platform.includes("Mac"),
-          metaKey: navigator.platform.includes("Mac"),
-          bubbles: true
-        }));
-        api.notify.success("Saved");
-      } catch {
-        api.notify.error("Save failed");
+function openExPrompt(api, setLineNumbers) {
+  promptOverlay(":", async (raw) => {
+    const result = runEx(raw);
+    switch (result.kind) {
+      case "noop":
+        return;
+      case "save": {
+        try {
+          await api.notes.saveCurrent();
+          api.notify.success("Saved");
+        } catch (err) {
+          api.notify.error(`Save failed: ${err.message ?? String(err)}`);
+        }
+        return;
       }
-    }
-    if (cmd === "q" || cmd === "wq") {
-      api.notify.info(":q (no pane to close)");
-    }
-    if (cmd === "set number" || cmd === "set nu") {
-      api.commands.register;
-      document.dispatchEvent(new CustomEvent("vim:set-line-numbers", { detail: true }));
-    }
-    if (cmd === "set nonumber" || cmd === "set nonu") {
-      document.dispatchEvent(new CustomEvent("vim:set-line-numbers", { detail: false }));
+      case "close": {
+        try {
+          api.ui.closePane();
+        } catch (err) {
+          api.notify.error(`Close failed: ${err.message ?? String(err)}`);
+        }
+        return;
+      }
+      case "save-and-close": {
+        try {
+          await api.notes.saveCurrent();
+        } catch (err) {
+          api.notify.error(`Save failed: ${err.message ?? String(err)}`);
+          return;
+        }
+        try {
+          api.ui.closePane();
+        } catch (err) {
+          api.notify.error(`Close failed: ${err.message ?? String(err)}`);
+        }
+        return;
+      }
+      case "set-option": {
+        if (result.option === "lineNumbers") {
+          api.editor.setOption("lineNumbers", result.value);
+          setLineNumbers(result.value);
+        } else {
+          api.editor.setOption(result.option, result.value);
+        }
+        return;
+      }
+      case "unknown":
+        api.notify.error(`Unknown command: ${result.cmd}`);
+        return;
     }
   });
 }

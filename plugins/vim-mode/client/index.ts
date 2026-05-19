@@ -159,6 +159,30 @@ function motionRange(doc: string, pos: number, motion: string, count: number): {
   return { from: target, to: pos, lineWise: false };
 }
 
+type ExResult =
+  | { kind: 'save' }
+  | { kind: 'close' }
+  | { kind: 'save-and-close' }
+  | { kind: 'set-option'; option: string; value: boolean }
+  | { kind: 'noop' }
+  | { kind: 'unknown'; cmd: string };
+
+function runEx(cmdStr: string): ExResult {
+  let s = (cmdStr || '').trim();
+  if (s.startsWith(':')) s = s.slice(1).trim();
+  if (!s) return { kind: 'noop' };
+  if (s === 'w' || s === 'write') return { kind: 'save' };
+  if (s === 'q' || s === 'quit') return { kind: 'close' };
+  if (s === 'wq' || s === 'x' || s === 'wq!') return { kind: 'save-and-close' };
+  if (s === 'set number' || s === 'set nu') {
+    return { kind: 'set-option', option: 'lineNumbers', value: true };
+  }
+  if (s === 'set nonumber' || s === 'set nonu') {
+    return { kind: 'set-option', option: 'lineNumbers', value: false };
+  }
+  return { kind: 'unknown', cmd: s };
+}
+
 function parseCount(buf: string): { count: number; rest: string } {
   let i = 0;
   while (i < buf.length && buf.charCodeAt(i) >= 0x30 && buf.charCodeAt(i) <= 0x39) {
@@ -381,7 +405,10 @@ export function activate(api: ClientPluginAPI): void {
       const stored = await api.storage.get('enabled');
       if (stored === false) enabled = false;
       const ln = await api.storage.get('lineNumbers');
-      if (ln === true) lineNumbers = true;
+      if (ln === true) {
+        lineNumbers = true;
+        api.editor.setOption('lineNumbers', true);
+      }
     } catch { /* ignore */ }
   })();
 
@@ -503,7 +530,10 @@ export function activate(api: ClientPluginAPI): void {
         return 'prevent-default';
 
       case 'ex-open':
-        openExPrompt(api);
+        openExPrompt(api, (v: boolean) => {
+          lineNumbers = v;
+          api.storage.set('lineNumbers', v).catch(() => { /* ignore */ });
+        });
         return 'prevent-default';
 
       case 'search': {
@@ -602,59 +632,63 @@ export function activate(api: ClientPluginAPI): void {
     execute: (): void => {
       lineNumbers = !lineNumbers;
       api.storage.set('lineNumbers', lineNumbers).catch(() => { /* ignore */ });
-      applyLineNumberDecoration();
+      api.editor.setOption('lineNumbers', lineNumbers);
       api.notify.info(`Line numbers ${lineNumbers ? 'on' : 'off'}`);
     },
   });
 
-  // ---- Line numbers (decoration via a CSS class on the editor container) ----
-  function applyLineNumberDecoration(): void {
-    try {
-      const root = document.querySelector('[data-kryton-editor-root], .kryton-editor, .editor-root');
-      if (!root) return;
-      if (lineNumbers) root.classList.add('vim-line-numbers');
-      else root.classList.remove('vim-line-numbers');
-    } catch { /* ignore */ }
-  }
 }
 
 // =============================================================================
 // Ex command prompt + search prompt — minimal overlay UI
 // =============================================================================
 
-function openExPrompt(api: ClientPluginAPI): void {
-  promptOverlay(':', async (cmd) => {
-    cmd = cmd.trim();
-    if (!cmd) return;
-    if (cmd === 'w' || cmd === 'wq') {
-      // Save via notes.update
-      try {
-        const note = (api.context as any).useCurrentNote ? null : null;
-        void note;
-        // The plugin context hook is React-only; instead the host dispatches
-        // a "save" via the active note. Fire a synthetic Ctrl/Cmd+S as a
-        // fallback to leverage the host save flow.
-        const tgt = document.activeElement || document.body;
-        (tgt as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', {
-          key: 's', code: 'KeyS',
-          ctrlKey: !navigator.platform.includes('Mac'),
-          metaKey: navigator.platform.includes('Mac'),
-          bubbles: true,
-        }));
-        api.notify.success('Saved');
-      } catch { api.notify.error('Save failed'); }
-    }
-    if (cmd === 'q' || cmd === 'wq') {
-      // No-op: closing a pane is host-managed.
-      api.notify.info(':q (no pane to close)');
-    }
-    if (cmd === 'set number' || cmd === 'set nu') {
-      api.commands.register; // referenced so lint is happy
-      // Fire the command via a custom event the toggle command listens to.
-      document.dispatchEvent(new CustomEvent('vim:set-line-numbers', { detail: true }));
-    }
-    if (cmd === 'set nonumber' || cmd === 'set nonu') {
-      document.dispatchEvent(new CustomEvent('vim:set-line-numbers', { detail: false }));
+function openExPrompt(
+  api: ClientPluginAPI,
+  setLineNumbers: (v: boolean) => void,
+): void {
+  promptOverlay(':', async (raw) => {
+    const result = runEx(raw);
+    switch (result.kind) {
+      case 'noop':
+        return;
+      case 'save': {
+        try {
+          await api.notes.saveCurrent();
+          api.notify.success('Saved');
+        } catch (err) {
+          api.notify.error(`Save failed: ${(err as Error).message ?? String(err)}`);
+        }
+        return;
+      }
+      case 'close': {
+        try { api.ui.closePane(); }
+        catch (err) { api.notify.error(`Close failed: ${(err as Error).message ?? String(err)}`); }
+        return;
+      }
+      case 'save-and-close': {
+        try {
+          await api.notes.saveCurrent();
+        } catch (err) {
+          api.notify.error(`Save failed: ${(err as Error).message ?? String(err)}`);
+          return; // don't close on save failure (vim :wq semantics)
+        }
+        try { api.ui.closePane(); }
+        catch (err) { api.notify.error(`Close failed: ${(err as Error).message ?? String(err)}`); }
+        return;
+      }
+      case 'set-option': {
+        if (result.option === 'lineNumbers') {
+          api.editor.setOption('lineNumbers', result.value);
+          setLineNumbers(result.value);
+        } else {
+          api.editor.setOption(result.option, result.value);
+        }
+        return;
+      }
+      case 'unknown':
+        api.notify.error(`Unknown command: ${result.cmd}`);
+        return;
     }
   });
 }

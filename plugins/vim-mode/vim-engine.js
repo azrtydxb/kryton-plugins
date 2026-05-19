@@ -423,11 +423,44 @@ function step(input) {
   return { kind: 'consume', buffer };
 }
 
+// ---------- ex command parser ----------
+//
+// `runEx(cmdStr)` parses a colon-command (the bit after `:`) and returns
+// a pure descriptor for the client to execute. Keeps host-API calls out
+// of the engine.
+//
+// Returns one of:
+//   { kind: 'save' }
+//   { kind: 'close' }
+//   { kind: 'save-and-close' }
+//   { kind: 'set-option', option: 'lineNumbers', value: boolean }
+//   { kind: 'noop' }                              // empty / whitespace
+//   { kind: 'unknown', cmd: string }              // unrecognised
+function runEx(cmdStr) {
+  let s = (cmdStr || '').trim();
+  if (s.startsWith(':')) s = s.slice(1).trim();
+  if (!s) return { kind: 'noop' };
+
+  if (s === 'w' || s === 'write') return { kind: 'save' };
+  if (s === 'q' || s === 'quit') return { kind: 'close' };
+  if (s === 'wq' || s === 'x' || s === 'wq!') return { kind: 'save-and-close' };
+
+  if (s === 'set number' || s === 'set nu') {
+    return { kind: 'set-option', option: 'lineNumbers', value: true };
+  }
+  if (s === 'set nonumber' || s === 'set nonu') {
+    return { kind: 'set-option', option: 'lineNumbers', value: false };
+  }
+
+  return { kind: 'unknown', cmd: s };
+}
+
 module.exports = {
   step,
   applyMotion,
   motionRange,
   parseCount,
+  runEx,
   // exposed for tests/debug
   lineStartOf,
   lineEndOf,

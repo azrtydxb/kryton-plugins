@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 const engine = require('../vim-engine.js');
-const { step, applyMotion, parseCount, lineStartOf, lineEndOf, wordForward, wordBackward, wordEnd } = engine;
+const { step, applyMotion, parseCount, runEx, lineStartOf, lineEndOf, wordForward, wordBackward, wordEnd } = engine;
 
 const mkState = (doc, head, anchor) => ({ doc, selection: { head, anchor: anchor === undefined || anchor === null ? head : anchor } });
 const mkInput = (state, key, opts = {}) => ({
@@ -268,5 +268,50 @@ describe('step — star/hash search word under cursor', () => {
   it('* finds the word under cursor', () => {
     const r = step(mkInput(mkState('foo bar foo', 0), '*'));
     expect(r).toMatchObject({ kind: 'search', text: 'foo', forward: true });
+  });
+});
+
+describe('runEx — colon commands', () => {
+  it(':w returns save command', () => {
+    expect(runEx(':w')).toEqual({ kind: 'save' });
+    expect(runEx('w')).toEqual({ kind: 'save' });
+    expect(runEx(':write')).toEqual({ kind: 'save' });
+  });
+
+  it(':q returns close command', () => {
+    expect(runEx(':q')).toEqual({ kind: 'close' });
+    expect(runEx('q')).toEqual({ kind: 'close' });
+    expect(runEx(':quit')).toEqual({ kind: 'close' });
+  });
+
+  it(':wq returns save-and-close', () => {
+    expect(runEx(':wq')).toMatchObject({ kind: 'save-and-close' });
+    expect(runEx(':x')).toMatchObject({ kind: 'save-and-close' });
+  });
+
+  it(':set number returns set-option lineNumbers true', () => {
+    expect(runEx(':set number')).toEqual({ kind: 'set-option', option: 'lineNumbers', value: true });
+  });
+
+  it(':set nu (abbrev) returns set-option lineNumbers true', () => {
+    expect(runEx(':set nu')).toEqual({ kind: 'set-option', option: 'lineNumbers', value: true });
+  });
+
+  it(':set nonumber returns set-option lineNumbers false', () => {
+    expect(runEx(':set nonumber')).toEqual({ kind: 'set-option', option: 'lineNumbers', value: false });
+  });
+
+  it(':set nonu (abbrev) returns set-option lineNumbers false', () => {
+    expect(runEx(':set nonu')).toEqual({ kind: 'set-option', option: 'lineNumbers', value: false });
+  });
+
+  it('empty input is a noop', () => {
+    expect(runEx('')).toEqual({ kind: 'noop' });
+    expect(runEx(':')).toEqual({ kind: 'noop' });
+    expect(runEx('   ')).toEqual({ kind: 'noop' });
+  });
+
+  it('unknown command surfaces the original text', () => {
+    expect(runEx(':lolwat')).toEqual({ kind: 'unknown', cmd: 'lolwat' });
   });
 });
