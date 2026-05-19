@@ -10,13 +10,17 @@
     "lint:fix": "eslint plugins/ --ext .js --fix",
     "generate": "node scripts/generate-registry.js",
     "validate": "node scripts/validate-registry.js",
-    "test": "node scripts/test-plugins.js"
+    "test": "node scripts/test-plugins.js && vitest run",
+    "test:unit": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/multer": "^2.1.0",
     "@types/node": "^25.5.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
-    "typescript": "^5.9.0"
+    "jsdom": "^25.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^2.1.0"
   }
 }
