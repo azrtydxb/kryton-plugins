@@ -94,7 +94,7 @@ function runFormat(api, fallbackContent) {
   const fromEditor = readEditor(api);
   const content = fromEditor?.content ?? fallbackContent;
   const caret = fromEditor?.caret ?? 0;
-  if (content == null) {
+  if (content === null || content === void 0) {
     api.notify.info("No note is currently open.");
     return;
   }

@@ -133,7 +133,7 @@ function runFormat(api: ClientPluginAPI, fallbackContent: string | null): void {
   const fromEditor = readEditor(api);
   const content = fromEditor?.content ?? fallbackContent;
   const caret = fromEditor?.caret ?? 0;
-  if (content == null) {
+  if (content === null || content === undefined) {
     api.notify.info('No note is currently open.');
     return;
   }
