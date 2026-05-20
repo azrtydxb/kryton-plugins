@@ -205,9 +205,9 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
       display: 'flex',
       gap: '12px',
       padding: '12px',
-      background: '#1a1a2e',
+      background: 'var(--bg)',
       borderRadius: '8px',
-      border: '1px solid #4f4f6a',
+      border: '1px solid var(--line-strong)',
       overflowX: 'auto',
       alignItems: 'flex-start',
     },
@@ -220,7 +220,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
           minWidth: '220px',
           maxWidth: '260px',
           flex: '0 0 auto',
-          background: '#252535',
+          background: 'var(--bg-1)',
           padding: '8px',
           borderRadius: '6px',
           display: 'flex',
@@ -237,7 +237,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
                   flex: 1,
                   background: 'transparent',
                   border: 'none',
-                  color: '#e0e0e0',
+                  color: 'var(--fg)',
                   fontWeight: 600,
                   fontSize: '13px',
                   outline: 'none',
@@ -246,7 +246,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
             : h('div', {
                 style: {
                   flex: 1,
-                  color: '#e0e0e0',
+                  color: 'var(--fg)',
                   fontWeight: 600,
                   fontSize: '13px',
                 },
@@ -254,8 +254,8 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
           h('span', {
             style: {
               fontSize: '11px',
-              color: '#9ca3af',
-              background: '#1a1a2e',
+              color: 'var(--fg-3)',
+              background: 'var(--bg)',
               padding: '1px 6px',
               borderRadius: '10px',
             },
@@ -267,7 +267,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
                 style: {
                   background: 'transparent',
                   border: 'none',
-                  color: '#6b7280',
+                  color: 'var(--fg-4)',
                   cursor: 'pointer',
                   fontSize: '14px',
                 },
@@ -283,10 +283,10 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
               key: card.id || ('card-' + idx),
               className: 'kanban-card',
               style: {
-                background: '#1e1e2e',
+                background: 'var(--bg-2)',
                 padding: '6px 8px',
                 borderRadius: '4px',
-                border: '1px solid #3a3a5a',
+                border: '1px solid var(--line)',
                 cursor: interactive ? 'grab' : 'default',
                 display: 'flex',
                 alignItems: 'center',
@@ -308,7 +308,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
                       flex: 1,
                       background: 'transparent',
                       border: 'none',
-                      color: card.done ? '#6b7280' : '#e0e0e0',
+                      color: card.done ? 'var(--fg-4)' : 'var(--fg)',
                       textDecoration: card.done ? 'line-through' : 'none',
                       fontSize: '13px',
                       outline: 'none',
@@ -317,7 +317,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
                 : h('span', {
                     style: {
                       flex: 1,
-                      color: card.done ? '#6b7280' : '#e0e0e0',
+                      color: card.done ? 'var(--fg-4)' : 'var(--fg)',
                       textDecoration: card.done ? 'line-through' : 'none',
                       fontSize: '13px',
                     },
@@ -328,7 +328,7 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
                     style: {
                       background: 'transparent',
                       border: 'none',
-                      color: '#6b7280',
+                      color: 'var(--fg-4)',
                       cursor: 'pointer',
                       fontSize: '12px',
                     },
@@ -341,8 +341,8 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
           ? h('button', {
               onClick: () => addCard(ci),
               style: {
-                background: '#3a3a5a',
-                color: '#e0e0e0',
+                background: 'var(--line)',
+                color: 'var(--fg)',
                 border: 'none',
                 padding: '6px',
                 borderRadius: '4px',
@@ -359,9 +359,9 @@ function KanbanBoard({ initial, onChange, interactive = true }: BoardProps): any
           onClick: addColumn,
           style: {
             minWidth: '140px',
-            background: '#252535',
-            color: '#e0e0e0',
-            border: '1px dashed #4f4f6a',
+            background: 'var(--bg-1)',
+            color: 'var(--fg)',
+            border: '1px dashed var(--line-strong)',
             padding: '8px',
             borderRadius: '6px',
             cursor: 'pointer',
