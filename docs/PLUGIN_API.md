@@ -210,15 +210,39 @@ Register UI components in designated slots.
 
 | Slot | Registration Method | Description |
 |------|---------------------|-------------|
-| sidebar | `api.ui.registerSidebarItem(Component, opts)` | Sidebar panel item |
+| sidebar | `api.ui.registerSidebarPanel(Component, opts)` | Sidebar panel item |
 | statusbar-left | `api.ui.registerStatusBarItem(Component, { position: 'left', ... })` | Left status bar |
 | statusbar-right | `api.ui.registerStatusBarItem(Component, { position: 'right', ... })` | Right status bar |
-| editor-toolbar | `api.ui.registerEditorToolbarButton(Component, opts)` | Editor toolbar button |
-| pages | `api.ui.registerPage(path, Component)` | Custom full-page route |
-| note-actions | `api.ui.registerNoteAction(Component, opts)` | Note context menu actions |
+| editor-toolbar | `api.ui.registerEditorToolbarButton(Component, opts)` | Editor toolbar button (Edit/Split modes only) |
+| topbar | `api.ui.registerTopbarAction(Component, opts)` | Always-visible action in the global top bar, next to `+` New note and the search box |
+| pages | `api.ui.registerPage(Component, opts)` | Custom full-page route |
+| note-actions | `api.ui.registerNoteAction(opts)` | Note context menu actions |
 | settings-section | `api.ui.registerSettingsSection(Component, opts)` | Plugin settings panel |
 
 Options typically include `id` (string) and `order` (number for positioning).
+
+#### `registerTopbarAction(component, { id, order? })`
+
+Renders a component into the global top bar — sitting next to the "+" New
+note button and the search field. Unlike the editor toolbar, top-bar actions
+are visible in every layout (Preview, Edit, Split, page views), so this is
+the right slot for app-wide entry points such as bulk import, global
+search overrides, or workspace-level commands.
+
+The `mass-upload` plugin uses it to expose its Upload modal trigger:
+
+```ts
+api.ui.registerTopbarAction(
+  () => h(UploadButton, { api }),
+  { id: 'mass-upload-btn', order: 0 },
+);
+```
+
+#### `closePane()`
+
+Imperative helper that closes the currently focused note pane (the
+Cmd+W intent). No-op when no pane is open. Useful for plugins that
+manage their own keybindings or finish an editing workflow programmatically.
 
 ### `api.editor`
 
@@ -229,9 +253,29 @@ it by registering an `EditorPlugin` value, not by injecting CodeMirror extension
 | Method | Description |
 |--------|-------------|
 | `api.editor.registerPlugin(plugin)` | Register an `EditorPlugin`. Returns an `unregister()` function. |
-| `api.editor.getActiveState()` | Snapshot of the focused editor's `EditorState`, or `null` if no editor is mounted. |
-| `api.editor.dispatch(tr)` | Dispatch a `Transaction` to the active editor. |
+| `api.editor.getActiveState()` | Snapshot of the focused editor's `EditorState` (`{ doc, selection: { anchor, head }, ... }`), or `null` if no editor is mounted. |
+| `api.editor.dispatch(tr)` | Dispatch a `Transaction` (insert / delete / replace ops + optional new selection) to the active editor. |
 | `api.editor.onTransaction(cb)` | Subscribe to every transaction applied to the active editor. Returns an unsubscribe fn. |
+| `api.editor.setOption(name, value)` | Set a host-level editor option. Known key: `"lineNumbers"` (boolean, default false) — toggles the gutter. Unknown keys are accepted for forward compatibility. |
+
+The `slash-commands` plugin shows the minimal `registerPlugin` shape —
+in this case wiring only the `suggestions` hook to power the `/`
+quick-insert menu:
+
+```ts
+const unregister = api.editor.registerPlugin({
+  name: 'slash-commands',
+  suggestions: async (_state, trigger) => {
+    if (trigger?.kind !== 'slash') return [];
+    return filterCommands(String(trigger.query ?? '')).map((cmd) => ({
+      id: cmd.id,
+      label: cmd.label,
+      kind: 'command' as const,
+      insert: resolveInsert(cmd),
+    }));
+  },
+});
+```
 
 #### `EditorPlugin` interface
 
@@ -274,22 +318,53 @@ interface CodeFenceRendererProps {
   /** Path of the host note. May be empty when no path is known. */
   notePath: string;
   /**
-   * Line range of the entire fence (including the opening + closing ``` lines)
-   * in the parsed note source. 0-based, inclusive of both endpoints.
-   * Undefined when source position data is not available.
+   * Range of the entire fence in the PARSED note source (after frontmatter
+   * stripping + wikilink-embed substitution). Undefined when source position
+   * data is not available. Prefer `rawRange` for round-tripping to disk.
    */
   range?: { startLine: number; endLine: number };
+  /**
+   * Range of the entire fence in the RAW on-disk content — the same coordinate
+   * space as `api.notes.get(path).content`. Pass this straight to
+   * `api.notes.replaceFenceAtRange` without further adjustment. Undefined when
+   * the fence can't be located in the raw source.
+   */
+  rawRange?: { startLine: number; endLine: number };
   /** Full original fence block including the surrounding ``` markers. */
   source?: string;
+  /**
+   * True when the user is in an editing context (Edit or Split layout).
+   * False in pure Preview mode. Gate editable controls (drag handles,
+   * delete buttons, inline inputs) on this flag so Preview stays read-only.
+   */
+  interactive?: boolean;
 }
 ```
 
-> ⚠️ The `range` passed to renderers is **parsed-body-relative**, not raw-file
-> relative. To round-trip an edit, locate `source` inside the latest raw note
-> content (`api.notes.get` / `getContent`) by string match and then call
-> `api.notes.update` with the rewritten content. Only call
-> `api.notes.replaceFenceAtRange` when you already hold a **raw-file** line
-> range (see below).
+> ⚠️ The `range` field is **parsed-body-relative**, not raw-file relative.
+> Prefer `rawRange` when round-tripping edits via
+> `api.notes.replaceFenceAtRange`. If neither `rawRange` nor a stable
+> `source` string is available, locate-and-replace against
+> `api.notes.get(path).content` is the safest fallback.
+
+#### Gating editable controls on `interactive`
+
+The `kanban` plugin uses `interactive` to keep its read-only renderer
+identical between Preview and Split, only enabling drag/delete/inline-add
+when the host marks the surface as editable:
+
+```ts
+function KanbanFenceRenderer(props: FenceRendererProps): any {
+  const { content, notePath, source, interactive } = props;
+  return h(KanbanBoard, {
+    initial: content,
+    onChange: (next) => persistFence(api, notePath, source, next),
+    // Default to false so Preview mode stays read-only even on older hosts
+    // that don't forward the flag.
+    interactive: interactive === true,
+  });
+}
+```
 
 ### `api.commands`
 
@@ -340,11 +415,23 @@ scoped to the signed-in user.
 | `api.notes.update(path, content)` | Overwrite a note's content. |
 | `api.notes.delete(path)` | Delete a note. |
 | `api.notes.openByPath(path)` | Open the note in the active editor pane. |
-| `api.notes.replaceFenceAtRange(path, range, newSource)` | Replace lines `[range.startLine .. range.endLine]` (0-based, inclusive) of the raw note file with `newSource`. **Expects raw-file line numbers.** |
+| `api.notes.replaceFenceAtRange(path, range, newSource)` | Replace lines `[range.startLine .. range.endLine]` (0-based, inclusive) of the raw note file with `newSource`. **Expects raw-file line numbers** — pass `rawRange` from a fence renderer, not `range`. |
+| `api.notes.saveCurrent()` | Persist the currently focused editor buffer via the host save pipeline. Resolves with `{ path, savedAt }`; rejects when no editor is focused. |
 
-**`replaceFenceAtRange` example.** Inside a code-fence renderer the `range`
-you receive is parsed-body-relative, so the typical round-trip pattern is
-locate-by-source-string:
+**`replaceFenceAtRange` example.** When you have a verified raw-file range
+(e.g. `rawRange` forwarded by the host to a fence renderer):
+
+```js
+await api.notes.replaceFenceAtRange(
+  notePath,
+  rawRange,
+  "```kanban\n## Todo\n- [ ] new card\n```",
+);
+```
+
+When only `source` is available (older hosts, or when `rawRange` is
+undefined), the kanban plugin's locate-and-replace pattern is the safe
+fallback:
 
 ```js
 async function persistFence(api, notePath, oldSource, newSource) {
@@ -354,33 +441,29 @@ async function persistFence(api, notePath, oldSource, newSource) {
 }
 ```
 
-Use `replaceFenceAtRange` directly only when you already hold a verified
-raw-file line range (e.g. from a server-side indexer):
-
-```js
-await api.notes.replaceFenceAtRange(
-  "Journal/2026-05-19.md",
-  { startLine: 12, endLine: 24 },
-  "```kanban\n## Todo\n- [ ] new card\n```",
-);
-```
-
 ### `api.storage` (client)
 
-Per-plugin scoped key-value storage. Values are persisted server-side and
-isolated per plugin id. Pass a `userId` to scope an entry to a specific user;
-omit it for plugin-global storage.
+Per-plugin, per-user key-value storage. Values are persisted server-side
+and isolated by both plugin id and the signed-in user — two users running
+the same plugin see independent stores, and two plugins on the same
+account can't read each other's keys. Values must be JSON-serialisable.
 
-| Method | Description |
-|--------|-------------|
-| `api.storage.get(key)` | Read a value. Resolves to `unknown` (caller validates). |
-| `api.storage.set(key, value)` | Write a JSON-serialisable value. |
-| `api.storage.delete(key)` | Remove a key. |
-| `api.storage.list(prefix?)` | List `{ key, value, userId }` entries, optionally filtered by key prefix. |
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `get` | `(key: string) => Promise<unknown>` | Read a value. Resolves to `unknown` (caller validates). |
+| `set` | `(key: string, value: unknown) => Promise<{ ok: true }>` | Write a JSON-serialisable value. |
+| `delete` | `(key: string) => Promise<{ ok: true }>` | Remove a key. |
+| `list` | `(prefix?: string) => Promise<Array<{ key, value, userId }>>` | List entries, optionally filtered by key prefix. |
 
-```js
-await api.storage.set("last-sync", { at: Date.now() });
-const entry = await api.storage.get("last-sync");
+The `flashcards` plugin uses it to remember study progress across
+sessions:
+
+```ts
+const STORAGE_KEY = 'flashcards:progress';
+
+const saved = await api.storage.get(STORAGE_KEY).catch(() => null);
+// ... mutate progress ...
+await api.storage.set(STORAGE_KEY, updated);
 ```
 
 ### `api.notify`
@@ -408,8 +491,8 @@ Available dependencies:
 - `React` — the React library used by the host (use this — do not bundle your own copy)
 - `ReactDOM` — paired ReactDOM, for plugins that mount their own portals
 
-> ℹ️ Kryton's editor is **not** CodeMirror. Earlier docs referenced `vim` and
-> `getCM` exports here; those were never wired and have been removed. Plugins
+> ℹ️ Kryton's editor is **not** CodeMirror. Earlier docs referenced a
+> `getCM` export here; it was never wired and has since been removed. Plugins
 > that want to extend the editor should use `api.editor.registerPlugin` with an
 > `EditorPlugin` instead (see [`api.editor`](#apieditor)).
 
