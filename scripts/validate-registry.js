@@ -27,7 +27,7 @@ const REQUIRED_MANIFEST_FIELDS = [
   "version",
   "description",
   "author",
-  "minMnemoVersion",
+  "minKrytonVersion",
 ];
 
 let errors = 0;

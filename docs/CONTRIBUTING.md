@@ -1,6 +1,6 @@
-# Contributing to Mnemo Plugins
+# Contributing to Kryton Plugins
 
-Thank you for your interest in contributing plugins to Mnemo! This guide covers how to add a new plugin to the registry.
+Thank you for your interest in contributing plugins to Kryton! This guide covers how to add a new plugin to the registry.
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ Thank you for your interest in contributing plugins to Mnemo! This guide covers 
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/piwi3910/mnemo-plugins.git
-   cd mnemo-plugins
+   git clone https://github.com/azrtydxb/kryton-plugins.git
+   cd kryton-plugins
    npm install
    ```
 
@@ -60,7 +60,7 @@ All manifests must include these fields:
 | `version` | Semver version (must match the version in `registry.json`) |
 | `description` | Brief description |
 | `author` | Your name |
-| `minMnemoVersion` | Minimum Mnemo version required |
+| `minKrytonVersion` | Minimum Kryton version required |
 
 At least one of `server` or `client` entry points must be declared.
 
@@ -90,6 +90,24 @@ Fix any linting issues automatically:
 ```bash
 npm run lint:fix
 ```
+
+## Testing
+
+Plugins use [Vitest](https://vitest.dev) for unit tests. Place tests under
+`plugins/<name>/__tests__/*.test.js` (or `.test.ts` if you prefer to write
+tests in TypeScript — they will be picked up by the same runner).
+
+```bash
+npm test              # syntax checks + vitest
+npm run test:unit     # vitest only
+npm run test:watch    # vitest watch mode
+```
+
+Aim for **≥80% line coverage** on pure modules (parsers, validators,
+serializers, scheduling logic). Pure modules should not import from
+`window.__krytonPluginDeps` or the plugin API — keep side-effecting code
+in `client/index.ts` or `server/index.ts` and unit-test the pure pieces
+in isolation.
 
 ## Code Style
 
@@ -139,7 +157,7 @@ Pull requests are evaluated on:
 - **Quality**: Clean code, follows style guidelines
 - **Documentation**: Manifest has accurate description and settings
 - **Security**: No access to data outside the plugin's scope
-- **Compatibility**: Correct `minMnemoVersion` specified
+- **Compatibility**: Correct `minKrytonVersion` specified
 
 ## Questions?
 

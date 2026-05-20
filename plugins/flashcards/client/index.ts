@@ -1,11 +1,65 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useCallback } = React;
 
 interface Flashcard {
   question: string;
   answer: string;
+}
+
+interface ReviewState {
+  repetitions: number;
+  easeFactor: number;
+  intervalDays: number;
+  dueAt: string;
+}
+
+// SM-2: mirror of plugins/flashcards/srs.js (source of truth, covered by
+// __tests__/srs.test.js). esbuild builds this client standalone so we inline.
+function srsNextReview(card: Partial<ReviewState>, rating: number): ReviewState {
+  const quality = [1, 3, 4, 5][rating];
+  let { repetitions = 0, easeFactor = 2.5, intervalDays = 0 } = card || {};
+  if (quality < 3) {
+    repetitions = 0;
+    intervalDays = 1;
+  } else {
+    repetitions += 1;
+    if (repetitions === 1) intervalDays = 1;
+    else if (repetitions === 2) intervalDays = 6;
+    else intervalDays = Math.round(intervalDays * easeFactor);
+    easeFactor = Math.max(
+      1.3,
+      easeFactor + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02),
+    );
+  }
+  const dueAt = new Date(Date.now() + intervalDays * 86400000).toISOString();
+  return {
+    repetitions,
+    easeFactor: Number(easeFactor.toFixed(2)),
+    intervalDays,
+    dueAt,
+  };
+}
+
+function srsHashCard(question: string, answer: string): string {
+  let h = 0x811c9dc5;
+  const s = question + '||' + answer;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+}
+
+const STORAGE_KEY = 'reviews';
+const RATING_LABELS = ['Again', 'Hard', 'Good', 'Easy'];
+const RATING_COLORS = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'];
+
+function dueTime(state: ReviewState | undefined): number {
+  if (!state || !state.dueAt) return 0; // unreviewed cards are due immediately
+  const t = Date.parse(state.dueAt);
+  return Number.isFinite(t) ? t : 0;
 }
 
 function createFlashcardModal(api: ClientPluginAPI): (notePath: string) => void {
@@ -42,25 +96,68 @@ function createFlashcardModal(api: ClientPluginAPI): (notePath: string) => void 
     }
 
     // Mount a React component into the container
-    const { ReactDOM } = window.__mnemoPluginDeps as any;
+    const { ReactDOM } = window.__krytonPluginDeps as any;
 
     function FlashcardsApp(): any {
       const [cards, setCards] = useState<Flashcard[]>([]);
+      const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState<string | null>(null);
       const [index, setIndex] = useState(0);
       const [revealed, setRevealed] = useState(false);
+      const [saving, setSaving] = useState(false);
 
       useEffect(() => {
-        api.api.fetch(`/cards?path=${encodeURIComponent(notePath)}`)
-          .then(async (resp) => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const [resp, stored] = await Promise.all([
+              api.api.fetch(`/cards?path=${encodeURIComponent(notePath)}`),
+              api.storage.get(STORAGE_KEY).catch(() => null),
+            ]);
+            if (cancelled) return;
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
             const data = await resp.json() as { cards: Flashcard[] };
-            setCards(data.cards ?? []);
-          })
-          .catch((err: any) => setError(err?.message ?? 'Failed to load cards'))
-          .finally(() => setLoading(false));
+            const loadedReviews = (stored && typeof stored === 'object'
+              ? stored as Record<string, ReviewState>
+              : {});
+            const loadedCards = (data.cards ?? []).slice();
+            // Sort due cards first (oldest dueAt → first; unreviewed = due now).
+            loadedCards.sort((a, b) => {
+              const da = dueTime(loadedReviews[srsHashCard(a.question, a.answer)]);
+              const db = dueTime(loadedReviews[srsHashCard(b.question, b.answer)]);
+              return da - db;
+            });
+            setReviews(loadedReviews);
+            setCards(loadedCards);
+          } catch (err: any) {
+            if (!cancelled) setError(err?.message ?? 'Failed to load cards');
+          } finally {
+            if (!cancelled) setLoading(false);
+          }
+        })();
+        return () => { cancelled = true; };
       }, []);
+
+      const rateCard = useCallback(async (rating: number) => {
+        const card = cards[index];
+        if (!card) return;
+        const h = srsHashCard(card.question, card.answer);
+        const newState = srsNextReview(reviews[h] || {}, rating);
+        const updated = { ...reviews, [h]: newState };
+        setReviews(updated);
+        setSaving(true);
+        try {
+          await api.storage.set(STORAGE_KEY, updated);
+        } catch (err: any) {
+          api.notify.error(`Failed to save review: ${err?.message ?? err}`);
+        } finally {
+          setSaving(false);
+        }
+        // Advance to next card.
+        setRevealed(false);
+        setIndex((i: number) => Math.min(i + 1, cards.length - 1));
+      }, [cards, index, reviews]);
 
       const handleKeyDown = useCallback((e: KeyboardEvent) => {
         if (e.key === 'Escape') { cleanup(); return; }
@@ -126,6 +223,19 @@ function createFlashcardModal(api: ClientPluginAPI): (notePath: string) => void 
           cursor: disabled ? 'not-allowed' : 'pointer', fontSize: '13px',
         } as any),
         counter: { fontSize: '12px', color: '#6b7280', minWidth: '80px', textAlign: 'center' as const },
+        ratingRow: {
+          display: 'flex', gap: '8px', marginTop: '12px',
+          justifyContent: 'center', flexWrap: 'wrap',
+        } as any,
+        ratingBtn: (color: string, disabled: boolean) => ({
+          padding: '8px 14px',
+          background: disabled ? '#2a2a3e' : color,
+          color: disabled ? '#4b5563' : '#fff',
+          border: 'none', borderRadius: '6px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          fontSize: '13px', fontWeight: '600',
+          minWidth: '72px',
+        } as any),
       };
 
       return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
@@ -152,7 +262,19 @@ function createFlashcardModal(api: ClientPluginAPI): (notePath: string) => void 
                 h('div', { style: s.card },
                   h('div', { style: s.question }, cards[index].question),
                   revealed
-                    ? h('div', { style: s.answer }, cards[index].answer)
+                    ? h('div', null,
+                        h('div', { style: s.answer }, cards[index].answer),
+                        h('div', { style: s.ratingRow },
+                          ...RATING_LABELS.map((label, r) =>
+                            h('button', {
+                              key: label,
+                              style: s.ratingBtn(RATING_COLORS[r], saving),
+                              disabled: saving,
+                              onClick: () => rateCard(r),
+                            }, label),
+                          ),
+                        ),
+                      )
                     : h('button', {
                         style: s.revealBtn,
                         onClick: () => setRevealed(true),

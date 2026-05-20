@@ -1,4 +1,4 @@
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect } = React;
 function parseQueryType(raw) {
   const normalized = raw.trim().replace(/\s+/g, " ");

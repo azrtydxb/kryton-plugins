@@ -3,8 +3,8 @@
   "name": "Presentation Mode",
   "version": "1.0.0",
   "description": "Render notes as full-screen slide decks, split by horizontal rules",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["presentations", "slides", "visualization"],
   "icon": "monitor",
   "client": "client/index.js"

@@ -1,7 +1,5 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
-const { createElement: h, useState } = React;
 
 function downloadFile(filename: string, content: string): void {
   const blob = new Blob([content], { type: 'text/html;charset=utf-8' });

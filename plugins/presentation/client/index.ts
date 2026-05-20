@@ -1,7 +1,5 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
-const { createElement: h, useState, useEffect, useCallback } = React;
 
 // Split markdown content into slides on --- (horizontal rules)
 function splitSlides(content: string): string[] {
@@ -59,7 +57,7 @@ function renderSlideContent(md: string): string {
 function createPresentationOverlay(api: ClientPluginAPI): (notePath: string) => void {
   return function openPresentation(notePath: string): void {
     const overlay = document.createElement('div');
-    overlay.id = 'mnemo-presentation-overlay';
+    overlay.id = 'kryton-presentation-overlay';
     overlay.style.cssText = [
       'position:fixed', 'inset:0', 'z-index:99999',
       'background:#0f0f1a',
@@ -228,6 +226,6 @@ export function activate(api: ClientPluginAPI): void {
 }
 
 export function deactivate(): void {
-  const overlay = document.getElementById('mnemo-presentation-overlay');
+  const overlay = document.getElementById('kryton-presentation-overlay');
   if (overlay) overlay.remove();
 }

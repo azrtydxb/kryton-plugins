@@ -1,12 +1,17 @@
 import type { ClientPluginAPI } from "../../../types/client";
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useRef, useCallback } = React;
 
 // Mermaid is loaded dynamically from CDN to avoid bundling ~2MB
 let mermaidInstance: any = null;
 let mermaidLoading = false;
 let mermaidLoadCallbacks: Array<(mermaid: any) => void> = [];
+
+function currentTheme(): "dark" | "default" {
+  // Host writes data-theme="dark" | "light" on <html>; default to light.
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "default";
+}
 
 async function loadMermaid(): Promise<any> {
   if (mermaidInstance) return mermaidInstance;
@@ -26,7 +31,7 @@ async function loadMermaid(): Promise<any> {
     mermaidInstance.initialize({
       startOnLoad: false,
       securityLevel: "strict",
-      theme: "default",
+      theme: currentTheme(),
     });
     mermaidLoadCallbacks.forEach((cb) => cb(mermaidInstance));
     mermaidLoadCallbacks = [];
@@ -39,17 +44,25 @@ async function loadMermaid(): Promise<any> {
 
 let renderCounter = 0;
 
-function MermaidRenderer({ content, notePath }: { content: string; notePath: string }): any {
+function MermaidRenderer({ content, notePath: _notePath }: { content: string; notePath: string }): any {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const [themeKey, setThemeKey] = useState<string>(currentTheme());
 
   const render = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       const mermaid = await loadMermaid();
+      // Re-init each render so theme reflects current host theme.
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        theme: currentTheme(),
+      });
       renderCounter++;
       const id = `mermaid-${renderCounter}-${Date.now()}`;
       const { svg: renderedSvg } = await mermaid.render(id, content);
@@ -60,28 +73,41 @@ function MermaidRenderer({ content, notePath }: { content: string; notePath: str
     } finally {
       setLoading(false);
     }
-  }, [content]);
+  }, [content, themeKey]);
 
   useEffect(() => {
     render();
   }, [render]);
 
+  // Watch for theme changes on <html data-theme="...">
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      const next = currentTheme();
+      setThemeKey((prev) => (prev === next ? prev : next));
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+
   if (loading) {
     return h(
       "div",
       {
-        className:
-          "flex items-center justify-center p-8 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-surface-900",
+        style: {
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 32, border: "1px solid var(--line)", borderRadius: 8,
+          background: "var(--bg-1)", color: "var(--fg-3)", fontSize: 13,
+          gap: 8,
+        },
       },
-      h(
-        "div",
-        { className: "text-sm text-gray-400 flex items-center gap-2" },
-        h("div", {
-          className:
-            "w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin",
-        }),
-        "Rendering diagram..."
-      )
+      h("div", {
+        style: {
+          width: 16, height: 16,
+          border: "2px solid var(--accent)", borderTopColor: "transparent",
+          borderRadius: "50%", animation: "spin 0.8s linear infinite",
+        },
+      }),
+      "Rendering diagram..."
     );
   }
 
@@ -89,35 +115,43 @@ function MermaidRenderer({ content, notePath }: { content: string; notePath: str
     return h(
       "div",
       {
-        className:
-          "p-4 border border-red-300 dark:border-red-700 rounded-lg bg-red-50 dark:bg-red-900/20",
+        style: {
+          padding: 16, border: "1px solid var(--accent-danger)", borderRadius: 8,
+          background: "color-mix(in oklch, var(--accent-danger) 12%, transparent)",
+        },
       },
       h(
         "div",
-        { className: "text-sm font-medium text-red-600 dark:text-red-400 mb-2" },
+        { style: { fontSize: 13, fontWeight: 500, color: "var(--accent-danger)", marginBottom: 8 } },
         "Mermaid diagram error"
       ),
       h(
         "pre",
         {
-          className:
-            "text-xs text-red-500 dark:text-red-400 whitespace-pre-wrap font-mono",
+          style: {
+            fontSize: 11, color: "var(--accent-danger)",
+            whiteSpace: "pre-wrap", fontFamily: "var(--font-mono, monospace)",
+            margin: 0,
+          },
         },
         error
       ),
       h(
         "details",
-        { className: "mt-2" },
+        { style: { marginTop: 8 } },
         h(
           "summary",
-          { className: "text-xs text-gray-500 cursor-pointer" },
+          { style: { fontSize: 11, color: "var(--fg-3)", cursor: "pointer" } },
           "Show source"
         ),
         h(
           "pre",
           {
-            className:
-              "mt-1 text-xs text-gray-500 whitespace-pre-wrap font-mono bg-gray-100 dark:bg-gray-800 p-2 rounded",
+            style: {
+              marginTop: 4, fontSize: 11, color: "var(--fg-2)",
+              whiteSpace: "pre-wrap", fontFamily: "var(--font-mono, monospace)",
+              background: "var(--bg-2)", padding: 8, borderRadius: 4,
+            },
           },
           content
         )
@@ -127,8 +161,12 @@ function MermaidRenderer({ content, notePath }: { content: string; notePath: str
 
   return h("div", {
     ref: containerRef,
-    className:
-      "mermaid-diagram flex justify-center p-4 bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-x-auto",
+    className: "mermaid-diagram",
+    style: {
+      display: "flex", justifyContent: "center", padding: 16,
+      background: "var(--bg-1)", borderRadius: 8,
+      border: "1px solid var(--line)", overflowX: "auto",
+    },
     dangerouslySetInnerHTML: { __html: svg },
   });
 }

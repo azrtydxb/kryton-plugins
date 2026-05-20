@@ -38,7 +38,7 @@ const HTML_TEMPLATE = (title: string, content: string): string => `<!DOCTYPE htm
   <article class="exported-note">
     ${markdownToHtml(content)}
   </article>
-  <footer>Exported from Mnemo</footer>
+  <footer>Exported from Kryton</footer>
 </body>
 </html>`;
 

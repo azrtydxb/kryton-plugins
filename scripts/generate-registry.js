@@ -16,7 +16,7 @@ const PLUGINS_DIR = path.join(ROOT, "plugins");
 const REGISTRY_PATH = path.join(ROOT, "registry.json");
 
 // Fields to copy from manifest to registry entry
-const REGISTRY_FIELDS = ["id", "name", "description", "author", "version", "minMnemoVersion"];
+const REGISTRY_FIELDS = ["id", "name", "description", "author", "version", "minKrytonVersion"];
 // Optional fields
 const OPTIONAL_FIELDS = ["tags", "icon"];
 

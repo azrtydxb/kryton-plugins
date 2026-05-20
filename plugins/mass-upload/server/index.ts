@@ -221,7 +221,7 @@ export function createHandlers(api: PluginAPI, sessionStore: SessionStore) {
 export function activate(api: PluginAPI): void {
   api.log.info("Mass Upload plugin activated");
 
-  const baseDir = path.join(os.tmpdir(), "mnemo-mass-upload");
+  const baseDir = path.join(os.tmpdir(), "kryton-mass-upload");
   const sessionStore = new SessionStore(baseDir, {
     maxPerUser: 5,
     expiryMs: 30 * 60 * 1000,

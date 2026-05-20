@@ -2,13 +2,27 @@
   "id": "theme-settings",
   "name": "Theme Settings",
   "version": "1.0.0",
-  "description": "Customize colors, fonts, and layout of Mnemo's interface",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "description": "Customize colors, fonts, and layout of Kryton's interface",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["appearance", "customization"],
   "icon": "palette",
   "client": "client/index.js",
   "settings": [
+    {
+      "key": "preset",
+      "type": "string",
+      "default": "default",
+      "label": "Theme preset",
+      "perUser": true
+    },
+    {
+      "key": "mode",
+      "type": "string",
+      "default": "system",
+      "label": "Dark mode (light | dark | system)",
+      "perUser": true
+    },
     {
       "key": "accentColor",
       "type": "string",

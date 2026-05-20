@@ -1,6 +1,6 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useCallback, useRef } = React;
 
 interface Tag {
@@ -170,22 +170,56 @@ export function activate(api: ClientPluginAPI): void {
       }
     }
 
+    // Section header — matches the host's FAVORITES / FILES / TAGS
+    // caps style so the panel reads as a distinct "Tag Manager"
+    // section instead of looking like the tail of the Calendar above.
+    // (The built-in TAGS section browses; this panel rewrites tags
+    // across notes — rename / merge / delete.)
+    const header = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'Tag Manager'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(tags.length)),
+    );
+
     // Loading state
     if (loading) {
-      return h('div', { className: 'flex items-center justify-center h-full p-4' },
-        h('div', { className: 'flex items-center gap-2 text-sm text-gray-400' },
-          h('div', { className: 'w-4 h-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin' }),
-          'Loading tags...'
-        )
+      return h('div', { className: 'flex flex-col' },
+        header,
+        h('div', {
+          style: {
+            padding: '6px 12px 10px',
+            color: 'var(--fg-4)',
+            fontSize: 11.5,
+            fontStyle: 'italic',
+          },
+        }, 'Loading tags…'),
       );
     }
 
-    // Empty state
+    // Empty state — compact one-liner under the header, no duplicate
+    // "No tags …" message wrapper.
     if (tags.length === 0) {
-      return h('div', { className: 'flex flex-col h-full' },
-        h('div', { className: 'flex-1 flex items-center justify-center p-4 text-sm text-gray-400 dark:text-gray-500 text-center' },
-          'No tags found. Add #tags to your notes.'
-        )
+      return h('div', { className: 'flex flex-col' },
+        header,
+        h('div', {
+          style: {
+            padding: '6px 12px 10px',
+            color: 'var(--fg-4)',
+            fontSize: 11.5,
+            fontStyle: 'italic',
+          },
+        }, 'Add #tags to start managing.'),
       );
     }
 
@@ -275,6 +309,7 @@ export function activate(api: ClientPluginAPI): void {
     }
 
     return h('div', { className: 'flex flex-col h-full relative' },
+      header,
       // Active operation dialogs (shown at top)
       h(RenameDialog, null),
       h(MergeDialog, null),

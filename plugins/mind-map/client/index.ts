@@ -1,6 +1,6 @@
 import type { ClientPluginAPI } from "../../../types/client";
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useRef } = React;
 
 // Markmap library handles loaded via CDN
@@ -59,7 +59,7 @@ function MindMapRenderer({ content }: { content: string; notePath: string }): an
 
         // Destroy previous instance if any
         if (mmRef.current) {
-          try { mmRef.current.destroy(); } catch (_) {}
+          try { mmRef.current.destroy(); } catch {}
           mmRef.current = null;
         }
 
@@ -91,7 +91,7 @@ function MindMapRenderer({ content }: { content: string; notePath: string }): an
     return () => {
       cancelled = true;
       if (mmRef.current) {
-        try { mmRef.current.destroy(); } catch (_) {}
+        try { mmRef.current.destroy(); } catch {}
         mmRef.current = null;
       }
     };

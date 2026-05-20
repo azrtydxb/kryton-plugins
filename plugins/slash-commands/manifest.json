@@ -3,8 +3,8 @@
   "name": "Slash Commands",
   "version": "1.0.0",
   "description": "Type / at the start of a line to open a quick-insert menu for headings, formatting, tables, and more",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["editor", "productivity", "markdown"],
   "icon": "zap",
   "client": "client/index.js"

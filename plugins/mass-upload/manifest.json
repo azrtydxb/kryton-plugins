@@ -3,8 +3,8 @@
   "name": "Mass Upload",
   "version": "1.0.0",
   "description": "Bulk import .md files with validation and duplicate detection",
-  "author": "Mnemo",
-  "minMnemoVersion": "3.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "3.0.0",
   "server": "server/index.js",
   "client": "client/index.js",
   "settings": [

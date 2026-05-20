@@ -1,6 +1,6 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useCallback } = React;
 
 interface ReadingItem {
@@ -18,30 +18,7 @@ type FilterMode = 'all' | 'unread' | 'read';
 // Reading List panel component
 // ---------------------------------------------------------------------------
 
-function ReadingListPanel(): any {
-  const [items, setItems] = useState<ReadingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [addUrl, setAddUrl] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [filter, setFilter] = useState<FilterMode>('all');
-
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
-      const resp = await (window as any).__mnemoPluginAPI?.api?.fetch('/items') as Response | undefined;
-      // fetchItems is called with the injected api — see below
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // fetchItems placeholder — real fetch is wired via apiRef below
-  return null;
-}
-
-// We need access to `api` inside the component, so we use a factory pattern.
+// Factory pattern: the component needs `api` in closure scope.
 function createReadingListPanel(api: ClientPluginAPI): () => any {
   function ReadingList(): any {
     const [items, setItems] = useState<ReadingItem[]>([]);
@@ -142,7 +119,26 @@ function createReadingListPanel(api: ClientPluginAPI): () => any {
       fontWeight: active ? '600' : '400',
     });
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'READING LIST'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(items.length)),
+    );
+
     return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%' } },
+
+      sectionHeader,
 
       // Add URL section
       h('div', {

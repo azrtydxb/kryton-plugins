@@ -3,8 +3,8 @@
   "name": "Excalidraw",
   "version": "1.0.0",
   "description": "Render Excalidraw drawings embedded in notes via code fences",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["diagrams", "visualization", "drawing"],
   "icon": "pen-tool",
   "client": "client/index.js"

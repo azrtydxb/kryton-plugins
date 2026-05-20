@@ -3,8 +3,8 @@
   "name": "Kanban Board",
   "version": "1.0.0",
   "description": "Render kanban boards from code fences using a simple column/card format",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["productivity", "tasks", "visualization"],
   "icon": "columns",
   "client": "client/index.js"

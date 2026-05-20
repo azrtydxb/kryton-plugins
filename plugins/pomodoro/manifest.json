@@ -3,8 +3,8 @@
   "name": "Pomodoro Timer",
   "version": "1.0.0",
   "description": "Focus timer in the status bar with 25-minute work sessions and automatic breaks",
-  "author": "Mnemo",
-  "minMnemoVersion": "2.0.0",
+  "author": "Kryton",
+  "minKrytonVersion": "2.0.0",
   "tags": ["productivity", "focus", "timer"],
   "icon": "clock",
   "client": "client/index.js"

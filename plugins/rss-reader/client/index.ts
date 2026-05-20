@@ -1,6 +1,6 @@
 import type { ClientPluginAPI } from '../../../types/client';
 
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useCallback } = React;
 
 interface Feed {
@@ -8,6 +8,7 @@ interface Feed {
   url: string;
   title: string;
   addedAt: string;
+  unread?: number;
 }
 
 interface FeedItem {
@@ -74,6 +75,11 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
         api.notify.error('Failed to load feed items');
       } finally {
         setLoadingItems(false);
+      }
+      // Mark as read on open — reset unread badge locally + server-side
+      if ((feed.unread ?? 0) > 0) {
+        setFeeds((prev: any) => prev.map((f: any) => f.id === feed.id ? { ...f, unread: 0 } : f));
+        try { await api.api.fetch(`/feeds/${feed.id}/read`, { method: 'POST' }); } catch { /* ignore */ }
       }
     }
 
@@ -162,7 +168,26 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
       color: 'var(--color-muted, #888)', textTransform: 'uppercase', letterSpacing: '0.05em',
     };
 
+    const sectionHeader = h('div', {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '4px 12px',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 10.5,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+        color: 'var(--fg-3)',
+      },
+    },
+      h('span', null, 'RSS'),
+      h('span', { style: { color: 'var(--fg-4)' } }, String(feeds.length)),
+    );
+
     return h('div', { style: { display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' } },
+
+      sectionHeader,
 
       // Add feed input
       h('div', { style: { padding: '8px 10px', borderBottom: '1px solid var(--color-border, #3f3f5a)', display: 'flex', gap: '6px' } },
@@ -276,8 +301,25 @@ function createRSSPanel(api: ClientPluginAPI): () => any {
                           textAlign: 'left', color: 'var(--color-text, #e0e0e0)',
                           fontSize: '12px', padding: '0 2px',
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          fontWeight: (feed.unread ?? 0) > 0 ? '600' : '400',
                         },
                       }, feed.title),
+                      (feed.unread ?? 0) > 0
+                        ? h('span', {
+                            title: `${feed.unread} unread`,
+                            style: {
+                              minWidth: '18px',
+                              padding: '1px 6px',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              textAlign: 'center',
+                              borderRadius: '9px',
+                              background: '#7c3aed',
+                              color: '#fff',
+                              flexShrink: 0,
+                            },
+                          }, String(feed.unread))
+                        : null,
                       h('button', {
                         onClick: (e: any) => { e.stopPropagation(); handleRemoveFeed(feed); },
                         title: 'Remove feed',

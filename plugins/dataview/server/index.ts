@@ -121,7 +121,7 @@ export function activate(api: PluginAPI): void {
       return;
     }
 
-    // Resolve the user from the request (Mnemo attaches req.user)
+    // Resolve the user from the request (Kryton attaches req.user)
     const userId: string = req.user?.id;
     if (!userId) {
       res.status(401).json({ error: "Unauthorized" });

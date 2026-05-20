@@ -1,16 +1,36 @@
-const { React } = window.__mnemoPluginDeps;
+const { React } = window.__krytonPluginDeps;
 const { createElement: h, useState, useEffect, useCallback } = React;
 const CHECKBOX_RE = /^[-*]\s+\[( |x)\]\s+(.+)$/i;
 function parseCheckboxes(content) {
-  return content.split("\n").map((line, lineIndex) => {
+  const lines = content.split("\n");
+  const items = [];
+  let fenceChar = null;
+  let fenceLen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = /^[ \t]{0,3}([`~])\1{2,}/.exec(line);
+    if (fence) {
+      const ch = fence[0].trim()[0];
+      const len = fence[0].trim().length;
+      if (fenceChar === null) {
+        fenceChar = ch;
+        fenceLen = len;
+      } else if (ch === fenceChar && len >= fenceLen && /^[ \t]{0,3}[`~]{3,}\s*$/.test(line)) {
+        fenceChar = null;
+        fenceLen = 0;
+      }
+      continue;
+    }
+    if (fenceChar !== null) continue;
     const match = CHECKBOX_RE.exec(line.trim());
-    if (!match) return null;
-    return {
+    if (!match) continue;
+    items.push({
       text: match[2].trim(),
       checked: match[1].toLowerCase() === "x",
-      lineIndex
-    };
-  }).filter((item) => item !== null);
+      lineIndex: i
+    });
+  }
+  return items;
 }
 function noteLabel(path) {
   const parts = path.split("/");
@@ -44,64 +64,86 @@ function activate(api) {
     useEffect(() => {
       fetchChecklists();
     }, [fetchChecklists]);
-    const handleNavigate = useCallback((path) => {
-      api.api.fetch(`/notes/${encodeURIComponent(path)}`).catch(() => {
-      });
+    const handleNavigate = useCallback(async (path) => {
+      await api.notes.openByPath(path);
     }, []);
+    const visibleNotes = notes.map((note) => ({
+      ...note,
+      items: showCompleted ? note.items : note.items.filter((i) => !i.checked)
+    })).filter((note) => note.items.length > 0);
+    const totalCount = visibleNotes.reduce(
+      (acc, n) => acc + n.items.length,
+      0
+    );
+    const header = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "4px 12px",
+          fontFamily: "var(--font-mono, monospace)",
+          fontSize: 10.5,
+          letterSpacing: 0.6,
+          textTransform: "uppercase",
+          color: "var(--fg-3)"
+        }
+      },
+      h("span", null, "Checklist"),
+      h(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        h("span", { style: { color: "var(--fg-4)" } }, String(totalCount)),
+        h("button", {
+          onClick: fetchChecklists,
+          title: "Refresh",
+          "aria-label": "Refresh checklist",
+          style: {
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            color: "var(--fg-4)",
+            fontSize: 11
+          }
+        }, "\u21BB")
+      )
+    );
     if (loading) {
       return h(
         "div",
-        { className: "flex items-center justify-center h-full p-4 text-sm text-gray-400 dark:text-gray-500" },
-        "Loading checklists\u2026"
+        { className: "flex flex-col" },
+        header,
+        h("div", {
+          style: { padding: "6px 12px 10px", color: "var(--fg-4)", fontSize: 11.5, fontStyle: "italic" }
+        }, "Loading checklists\u2026")
       );
     }
     if (error) {
       return h(
         "div",
-        { className: "flex flex-col items-center justify-center h-full p-4 gap-2" },
-        h("span", { className: "text-sm text-red-400" }, "Error: " + error),
-        h("button", {
-          onClick: fetchChecklists,
-          className: "text-xs text-gray-400 hover:text-gray-200 transition-colors"
-        }, "Retry")
+        { className: "flex flex-col" },
+        header,
+        h("div", {
+          style: { padding: "6px 12px 10px", color: "var(--accent-error, crimson)", fontSize: 11.5 }
+        }, "Error: " + error)
       );
     }
-    const visibleNotes = notes.map((note) => ({
-      ...note,
-      items: showCompleted ? note.items : note.items.filter((i) => !i.checked)
-    })).filter((note) => note.items.length > 0);
     if (visibleNotes.length === 0) {
       return h(
         "div",
-        { className: "flex flex-col items-center justify-center h-full p-4 gap-2" },
-        h(
-          "span",
-          { className: "text-sm text-gray-400 dark:text-gray-500" },
-          notes.length === 0 ? "No checklist items found." : "All items completed."
-        ),
-        h("button", {
-          onClick: fetchChecklists,
-          className: "text-xs text-gray-400 hover:text-violet-400 transition-colors"
-        }, "Refresh")
+        { className: "flex flex-col" },
+        header,
+        h("div", {
+          style: { padding: "6px 12px 10px", color: "var(--fg-4)", fontSize: 11.5, fontStyle: "italic" }
+        }, notes.length === 0 ? "No task-list items in any note." : "All items completed.")
       );
     }
     return h(
       "div",
       { className: "flex flex-col h-full" },
-      h(
-        "div",
-        { className: "flex items-center justify-between px-3 py-1.5 border-b border-gray-200 dark:border-gray-700" },
-        h(
-          "span",
-          { className: "text-xs text-gray-400 dark:text-gray-500" },
-          `${visibleNotes.reduce((acc, n) => acc + n.items.length, 0)} item(s)`
-        ),
-        h("button", {
-          onClick: fetchChecklists,
-          className: "text-xs text-gray-400 hover:text-violet-400 dark:hover:text-violet-400 transition-colors",
-          title: "Refresh"
-        }, "\u21BB")
-      ),
+      header,
       h(
         "ul",
         { className: "flex-1 overflow-y-auto py-1" },
