@@ -5,6 +5,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ["v*"]
+  # Three-tier test model (azrtydxb/.github docs/ci-standard.md §Test tiers):
+  # PR = fast unit/static tier; nightly + v* tag re-run the same suite as a
+  # slower safety net (no service-backed integration suite yet).
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch: {}
 
 jobs:
   validate:
